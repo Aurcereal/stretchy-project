@@ -23,24 +23,16 @@
 #include <string>
 #include <glm.hpp>
 #include <iostream>
+
+#include <vector>
+#include <unordered_set>
 using namespace glm;
 using namespace std;
 using namespace HDK_Sample;
 
-//
-// Help is stored in a "wiki" style text file. 
-//
-// See the sample_install.sh file for an example.
-//
-// NOTE : Follow this tutorial if you have any problems setting up your visual studio 2008 for Houdini 
-//  http://www.apileofgrains.nl/setting-up-the-hdk-for-houdini-12-with-visual-studio-2008/
-
-
-///
 /// newSopOperator is the hook that Houdini grabs from this dll
 /// and invokes to register the SOP.  In this case we add ourselves
 /// to the specified operator table.
-///
 void
 newSopOperator(OP_OperatorTable *table)
 {
@@ -49,54 +41,22 @@ newSopOperator(OP_OperatorTable *table)
 			    "VBDSolver",			// UI name
 			     SOP_VBD::myConstructor,	// How to build the SOP
 			     SOP_VBD::myTemplateList,	// My parameters
-			     0,				// Min # of sources
-			     0,				// Max # of sources
+			     1,				// Min # of sources
+			     1,				// Max # of sources
 			     SOP_VBD::myVariables,	// Local variables
 			     OP_FLAG_GENERATOR)		// Flag it as generator
 	    );
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//PUT YOUR CODE HERE
-//You need to declare your parameters here
-//Example to declare a variable for angle you can do like this :
-static PRM_Name		angleName("angle", "Angle");
-static PRM_Name		stepSizeName("stepSize", "StepSize");
-static PRM_Name		iterationsName("iterations", "Iterations");
-static PRM_Name		fileName("grammarFilePath", "GrammarFilePath");
+static PRM_Name	angleName("angle", "Angle"); // (internal, label)
+static PRM_Name	stepSizeName("stepSize", "StepSize");
+static PRM_Name	iterationsName("iterations", "Iterations");
+static PRM_Name	fileName("grammarFilePath", "GrammarFilePath");
 
-
-
-
-
-
-
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//				     ^^^^^^^^    ^^^^^^^^^^^^^^^
-//				     internal    descriptive version
-
-
-// PUT YOUR CODE HERE
-// You need to setup the initial/default values for your parameters here
-// For example : If you are declaring the inital value for the angle parameter
 static PRM_Default angleDefault(30.0);
 static PRM_Default stepSizeDefault(1.0);
 static PRM_Default iterationsDefault(2);
 static PRM_Default fileDefault(0, "UNDEFINED");
-
-
-
-
-
-
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////
 
 static PRM_Range angleRange(PRM_RANGE_RESTRICTED, 0, PRM_RANGE_UI, 360);
 static PRM_Range stepSizeRange(PRM_RANGE_RESTRICTED, 0, PRM_RANGE_UI, 5);
@@ -104,19 +64,6 @@ static PRM_Range iterationsRange(PRM_RANGE_RESTRICTED, 0, PRM_RANGE_UI, 8);
 
 PRM_Template
 SOP_VBD::myTemplateList[] = {
-// PUT YOUR CODE HERE
-// You now need to fill this template with your parameter name and their default value
-// EXAMPLE : For the angle parameter this is how you should add into the template
-// PRM_Template(PRM_FLT,	PRM_Template::PRM_EXPORT_MIN, 1, &angleName, &angleDefault, 0),
-// Similarly add all the other parameters in the template format here
-
-
-
-
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////
-
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &angleName, &angleDefault, 0, &angleRange),
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &stepSizeName, &stepSizeDefault, 0, &stepSizeRange),
    PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &iterationsName, &iterationsDefault, 0, &iterationsRange),
@@ -124,17 +71,16 @@ SOP_VBD::myTemplateList[] = {
    PRM_Template()
 };
 
-
-// Here's how we define local variables for the SOP.
 enum {
-	VAR_PT,		// Point number of the star
-	VAR_NPT		// Number of points in the star
+	VAR_PT,		// ptnum
+	VAR_NPT		// npts
 };
 
+// Local variable info, updated if looping through some pieces
 CH_LocalVariable
 SOP_VBD::myVariables[] = {
-    { "PT",	VAR_PT, 0 },		// The table provides a mapping
-    { "NPT",	VAR_NPT, 0 },		// from text string to integer token
+    { "PT",	VAR_PT, 0 },
+    { "NPT",	VAR_NPT, 0 },
     { 0, 0, 0 },
 };
 
@@ -183,17 +129,54 @@ SOP_VBD::disableParms()
     return 0;
 }
 
+// TODO: This could be put into a 'glue' class that acts as info relay between houdini sop and our sim
+// Converts input mesh into an adjacency list format
+int SOP_VBD::convertMeshToAdjacency(OP_Context &context, int inputIndex) {
+    if (lockInputs(context) >= UT_ERROR_ABORT) {
+        // Inputs won't be changed while we're looked; ensure input data doesn't change during cook
+        // Will auto unlock when context goes out of scope
+        std::cerr << "Lock Failed" << std::endl;
+        return -1;
+    }
+
+    const GU_Detail* geo = inputGeo(inputIndex, context);
+    int numPoints = geo->getNumPointOffsets();
+
+    // TODO: use VBDSolver class and have this method fill its adjList up and then can simulate it and then cooksop will take it back
+    // TODO: caching possible plan, solver stores a lastComputedFrameNumber and if the currFrame is AFTER that last computed frame, we can step from the lastcomputedframe to currframe in the sim
+    std::vector<std::unordered_set<GA_Offset>> adjList(geo->getNumPointOffsets());
+
+    // Create adjacency array
+    for (GA_Iterator primIterator = GA_Iterator(geo->getPrimitiveRange()); !primIterator.atEnd(); ++primIterator) {
+        const GEO_Primitive* prim = geo->getGEOPrimitive(*primIterator);
+        int numVertices = prim->getVertexCount();
+
+        for (int i = 0; i < numVertices; i++) {
+            int pntOffA = prim->getPointOffset(i);
+            int pntOffB = prim->getPointOffset((i + 1) % numVertices);
+
+            adjList[pntOffA].insert(pntOffB);
+            adjList[pntOffB].insert(pntOffA);
+        }
+    }
+
+    // Debug log the adjacency array
+    for (int pnt = 0; pnt < adjList.size(); pnt++) {
+        std::cerr << pnt << ": ";
+        for (GA_Offset neighbor : adjList[pnt]) {
+            std::cerr << neighbor << ", ";
+        }
+        std::cerr << std::endl;
+    }
+     
+    return 0;
+}
+
 OP_ERROR
 SOP_VBD::cookMySop(OP_Context &context)
 {
 	fpreal currTime = context.getTime();
 
-	// PUT YOUR CODE HERE
-	// Decare the necessary variables and get always keep getting the current value in the node
-	// For example to always get the current angle thats set in the node ,you need to :
-	//    float angle;
-	//    angle = ANGLE(now)       
-    //    NOTE : ANGLE is a function that you need to use and it is declared in the header file to update your values instantly while cooking 
 	float angle; angle = ANGLE(currTime);
     float stepSize; stepSize = STEP_SIZE(currTime);
     uint iterationCount; iterationCount = static_cast<uint>(ITERATIONS(currTime));
@@ -201,67 +184,19 @@ SOP_VBD::cookMySop(OP_Context &context)
     FILE_PATH(currTime, hFilePath);
     string filePath = hFilePath.toStdString();
 
-	///////////////////////////////////////////////////////////////////////////
+    std::cerr << "Current Time: " << currTime << std::endl;
 
-	//PUT YOUR CODE HERE
-	// Next you need to call your Lystem cpp functions 
-	// Below is an example , you need to call the same functions based on the variables you declare
-    if (filePath == "UNDEFINED") {
-        std::cerr << "Current Time: " << currTime << std::endl;
-        // return error();
-    }
+    convertMeshToAdjacency(context, 0);
 
-    //myplant.loadProgram(filePath);// loadProgramFromString("F\nF->F[+F]F[-F]");
-    //myplant.setDefaultAngle(angle);
-    //myplant.setDefaultStep(stepSize);
-	
-
-
-
-
-
-	///////////////////////////////////////////////////////////////////////////////
-
-	// PUT YOUR CODE HERE
-	// You the need call the below function for all the genrations ,so that the end points points will be
-	// stored in the branches vector , you need to declare them first
-	//std::vector<LSystem::Branch> branches; // array of vectors to pregenerate all iters? is that what they want? makes no sense cuz its run every cook
-
-	//for (int i = 0; i < 2; i++) // egnerations
-	//{
-	//	  myplant.process(i, branches);
-	//}
-    //myplant.process(iterationCount, branches);
-
-
-
-
-
-	///////////////////////////////////////////////////////////////////////////////////
-
-
-	// Now that you have all the branches ,which is the start and end point of each point ,its time to render 
-	// these branches into Houdini 
-    
-
-	// PUT YOUR CODE HERE
-	// Declare all the necessary variables for drawing cylinders for each branch 
-    float		 rad, tx, ty, tz;
-    int			 divisions, plane;
+    int			 divisions;
     int			 xcoord =0, ycoord = 1, zcoord =2;
-    float		 tmp;
-    UT_Vector4		 pos;
-    GU_PrimPoly		*poly;
-    int			 i;
     UT_Interrupt	*boss;
 
     // Since we don't have inputs, we don't need to lock them.
 
-    divisions  = glm::ceil(4+currTime);	// We need twice our divisions of points
+    divisions  = glm::ceil(4+currTime);
     myTotalPoints = divisions;		// Set the NPT local variable value, TODO: NOT ACCURATE RN FOR THE USER!
     myCurrPoint   = 0;			// Initialize the PT local variable
-
-
 
     // Check to see that there hasn't been a critical error in cooking the SOP.
     if (error() < UT_ERROR_ABORT)
@@ -269,10 +204,7 @@ SOP_VBD::cookMySop(OP_Context &context)
 	boss = UTgetInterrupt();
 	if (divisions < 4)
 	{
-	    // With the range restriction we have on the divisions, this
-	    //	is actually impossible, but it shows how to add an error
-	    //	message or warning to the SOP.
-	    addWarning(SOP_MESSAGE, "Invalid divisions");
+	    addWarning(SOP_MESSAGE, "Invalid divisions (just a test warning)");
 	    divisions = 4;
 	}
 	gdp->clearAndDestroy();  // Clear all geo of this node
@@ -280,14 +212,6 @@ SOP_VBD::cookMySop(OP_Context &context)
 	// Start the interrupt server
 	if (boss->opStart("Building Sim Frame"))
 	{
-        // PUT YOUR CODE HERE
-	    // Build a polygon
-	    // You need to build your cylinders inside Houdini from here
-		// TIPS:
-		// Use GU_PrimPoly poly = GU_PrimPoly::build(see what values it can take)
-		// Also use GA_Offset ptoff = poly->getPointOffset()
-		// and gdp->setPos3(ptoff,YOUR_POSITION_VECTOR) to build geometry.
-
         GA_Offset ptoff;
         UT_Vector3 tpos;
 
@@ -342,30 +266,22 @@ SOP_VBD::cookMySop(OP_Context &context)
 
         for (int i = 0; i < cols; i++)
         {
-            int off = 0 * (2 * cols + 4 * cols); // + 4 * cols because for each point offset we give for some reason appendPointOffset gets larger?!??!?!?!?!?!!?!?
             int next = (i + 1) % cols;
 
-            int lsm[4] = { off + i, off + next,off + cols + next,off + cols + i };
+            int lsm[4] = { i, next,cols + next,cols + i };
+            std::cerr << lsm[0] << '\t' << lsm[1] << '\t' << lsm[2] << '\t' << lsm[3] << std::endl;
 
+            std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
             GU_PrimPoly* poly = GU_PrimPoly::build(gdp, 4, GU_POLY_CLOSED);
+            std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
 
             poly->setPointOffset(0, lsm[0]);// off + i);
             poly->setPointOffset(1, lsm[1]);// off + next);
             poly->setPointOffset(2, lsm[2]);// off + cols + next);
             poly->setPointOffset(3, lsm[3]);// off + cols + i);
 
-            // std::cerr << lsm[0] << ", " << lsm[1] << ", " << lsm[2] << ", " << lsm[3] << std::endl;
         }
-
-		////////////////////////////////////////////////////////////////////////////////////////////
-
-	    // Highlight the star which we have just generated.  This routine
-	    // call clears any currently highlighted geometry, and then it
-	    // highlights every primitive for this SOP. 
 	    select(GU_SPrimitive);
-
-        // This flag gets reset to false every beginning cook, so we have to set back to true
-        flags().setTimeDep(true);
 	}
 
 	// Tell the interrupt server that we've completed. Must do this
@@ -374,6 +290,10 @@ SOP_VBD::cookMySop(OP_Context &context)
     }
 
     myCurrPoint = -1;
+
+    // This flag gets reset to false every beginning cook, so we have to set back to true
+    flags().setTimeDep(true);
+
     return error();
 }
 

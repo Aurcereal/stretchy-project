@@ -68,7 +68,7 @@ private:
     int  ITERATIONS(fpreal t) { return evalInt("iterations", 0, t); }
     void  FILE_PATH(fpreal t, UT_String& filePath) { evalString(filePath, "grammarFilePath", 0, t); }
 
-	
+    int convertMeshToAdjacency(OP_Context& context, int inputIndex);
 
 
 
