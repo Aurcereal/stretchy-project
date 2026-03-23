@@ -14,6 +14,7 @@
 #include <PRM/PRM_SpareData.h>
 #include <OP/OP_Operator.h>
 #include <OP/OP_OperatorTable.h>
+#include "half-edge-mesh.h"
 
 
 #include <limits.h>
@@ -26,6 +27,7 @@
 
 #include <vector>
 #include <unordered_set>
+#include "defines.h"
 using namespace glm;
 using namespace std;
 using namespace HDK_Sample;
@@ -129,6 +131,7 @@ SOP_VBD::disableParms()
     return 0;
 }
 
+
 // TODO: This could be put into a 'glue' class that acts as info relay between houdini sop and our sim
 // Converts input mesh into an adjacency list format
 int SOP_VBD::convertMeshToAdjacency(OP_Context &context, int inputIndex) {
@@ -140,34 +143,101 @@ int SOP_VBD::convertMeshToAdjacency(OP_Context &context, int inputIndex) {
     }
 
     const GU_Detail* geo = inputGeo(inputIndex, context);
-    int numPoints = geo->getNumPointOffsets();
+    uPtr<HalfEdgeMesh> mesh = mkU<HalfEdgeMesh>();
+    mesh->CreateFromGUDetail(geo);
+    //int numPoints = geo->getNumPointOffsets();
 
-    // TODO: use VBDSolver class and have this method fill its adjList up and then can simulate it and then cooksop will take it back
-    // TODO: caching possible plan, solver stores a lastComputedFrameNumber and if the currFrame is AFTER that last computed frame, we can step from the lastcomputedframe to currframe in the sim
-    std::vector<std::unordered_set<GA_Offset>> adjList(geo->getNumPointOffsets());
+    //// TODO: use VBDSolver class and have this method fill its adjList up and then can simulate it and then cooksop will take it back
+    //// TODO: caching possible plan, solver stores a lastComputedFrameNumber and if the currFrame is AFTER that last computed frame, we can step from the lastcomputedframe to currframe in the sim
+    //uint geoPointCountBound = geo->getNumPointOffsets();
+    //std::vector<std::unordered_set<GA_Offset>> adjList(geoPointCountBound);
 
-    // Create adjacency array
-    for (GA_Iterator primIterator = GA_Iterator(geo->getPrimitiveRange()); !primIterator.atEnd(); ++primIterator) {
-        const GEO_Primitive* prim = geo->getGEOPrimitive(*primIterator);
-        int numVertices = prim->getVertexCount();
+    //uPtr<HalfEdgeMesh> mesh = mkU<HalfEdgeMesh>();
+    //std::unordered_map<uint, HalfEdge*> symMap;
+    //
+    //// Create vertices
+    //for (GA_Iterator pointIter = GA_Iterator(geo->getPointRange()); !pointIter.atEnd(); ++pointIter) {
+    //    GA_Offset pointOffset = pointIter.getOffset();
+    //    UT_Vector3 hpos = geo->getPos3(pointOffset);
+    //    vec3 pos = vec3(hpos.x(), hpos.y(), hpos.z());
 
-        for (int i = 0; i < numVertices; i++) {
-            int pntOffA = prim->getPointOffset(i);
-            int pntOffB = prim->getPointOffset((i + 1) % numVertices);
+    //    mesh->addVertex(pointOffset, pos);
+    //}
 
-            adjList[pntOffA].insert(pntOffB);
-            adjList[pntOffB].insert(pntOffA);
-        }
-    }
+    //// Create half edge mesh
+    //for (GA_Iterator primIterator = GA_Iterator(geo->getPrimitiveRange()); !primIterator.atEnd(); ++primIterator) {
+    //    Face* f = mesh->addFace();
 
-    // Debug log the adjacency array
-    for (int pnt = 0; pnt < adjList.size(); pnt++) {
-        std::cerr << pnt << ": ";
-        for (GA_Offset neighbor : adjList[pnt]) {
-            std::cerr << neighbor << ", ";
-        }
-        std::cerr << std::endl;
-    }
+    //    const GEO_Primitive* prim = geo->getGEOPrimitive(*primIterator);
+    //    int numVertices = prim->getVertexCount();
+
+    //    HalfEdge* currEdge, *firstEdge;
+    //    HalfEdge* prevEdge = nullptr;
+    //    Vertex* prevVertex = mesh->getVertexAtOffset(prim->getPointOffset(numVertices - 1));
+    //    Vertex* currVertex;
+
+    //    for (int i = 0; i < numVertices; i++) {
+    //        currVertex = mesh->getVertexAtOffset(prim->getPointOffset(i));
+
+    //        // Create edge & next
+    //        currEdge = mesh->addEdge();
+    //        currEdge->face = f;
+    //        currEdge->nextVertex = currVertex;
+    //        currVertex->incomingEdge = currEdge;
+    //        if (prevEdge == nullptr) {
+    //            // First edge
+    //            firstEdge = currEdge;
+    //            f->edge = firstEdge;
+    //        } else {
+    //            prevEdge->next = currEdge;
+    //        }
+
+    //        // Sym
+    //        uint pairID = vertexPairToID(geoPointCountBound, currVertex, prevVertex);
+    //        if (symMap.count(pairID) != 0) {
+    //            currEdge->sym = symMap[pairID];
+    //            symMap[pairID]->sym = currEdge;
+    //        }
+    //        else {
+    //            symMap[pairID] = currEdge;
+    //        }
+
+    //        // Adjacency list
+    //        int pntOffA = prim->getPointOffset(i);
+    //        int pntOffB = prim->getPointOffset((i + 1) % numVertices);
+
+    //        adjList[pntOffA].insert(pntOffB);
+    //        adjList[pntOffB].insert(pntOffA);
+
+    //        // Update prev
+    //        prevVertex = currVertex; 
+    //        prevEdge = currEdge;
+    //    }
+
+    //    // Link to start
+    //    currEdge->next = firstEdge;
+    //}
+
+    //// Debug log the adjacency array
+    ///*for (int pnt = 0; pnt < adjList.size(); pnt++) {
+    //    std::cerr << pnt << ": ";
+    //    for (GA_Offset neighbor : adjList[pnt]) {
+    //        std::cerr << neighbor << ", ";
+    //    }
+    //    std::cerr << std::endl;
+    //}*/
+
+    //// Debug log the half edge mesh
+    //std::cerr << "Debugging Half Edge Mesh " << std::endl;
+    //for (const uPtr<Face>& face : mesh->faces) {
+    //    std::cerr << "\tFace " << face->id << std::endl;
+    //    
+    //    HalfEdge* currEdge = face->edge;
+    //    do {
+    //        std::cerr << "Edge " << currEdge->id << " has Vertex " << currEdge->nextVertex->id << " and NextPtr " << currEdge->next->id << " and Face " << currEdge->face->id << " and Sym " << currEdge->sym->id << std::endl;
+    //        currEdge = currEdge->next;
+    //    } while (currEdge != face->edge);
+    //}
      
     return 0;
 }
