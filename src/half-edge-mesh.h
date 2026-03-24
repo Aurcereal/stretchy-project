@@ -19,6 +19,8 @@ struct Vertex {
     GA_Offset pointOffset; // id within old mesh so points can maintain arb attributes that don't need to carry into sim, debatable whether should hvae this or just reconstruct from position ourself
     vec3 pos;
     HalfEdge* incomingEdge;
+
+    vec3 vel;
 };
 
 struct HalfEdge {
@@ -36,10 +38,18 @@ struct Face {
     HalfEdge* edge;
 };
 
+class VBDSolver;
+
 class HalfEdgeMesh {
 public:
     void CreateFromGUDetail(const GU_Detail*);
+    // void ConvertToHoudiniMesh(GU_Detail*);
+    void LoadIntoExistingTopologicallySameHoudiniMesh(GU_Detail*);
+    HalfEdgeMesh(const HalfEdgeMesh&);
+    HalfEdgeMesh();
 private:
+    friend class VBDSolver;
+    
     uint pointCountBound;
     vector<uPtr<Vertex>> vertices;
     vector<uPtr<HalfEdge>> halfEdges;
@@ -65,6 +75,7 @@ private:
         v->pointOffset = pointOffset;
         v->pos = pos;
         v->id = vertices.size() - 1;
+        v->vel = vec3(0.0f); // TODO: initial vel could be attrib or parameter
 
         // Update map
         pointOffsetToIndex[pointOffset] = vertices.size() - 1;

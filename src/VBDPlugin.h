@@ -1,11 +1,11 @@
 
 
-#ifndef __LSYSTEM_PLUGIN_h__
-#define __LSYSTEM_PLUGIN_h__
+#pragma once
 
 //#include <GEO/GEO_Point.h>
 //
 #include <SOP/SOP_Node.h>
+#include "VBDSolver.h"
 
 namespace HDK_Sample {
 class SOP_VBD : public SOP_Node
@@ -68,11 +68,11 @@ private:
     int  ITERATIONS(fpreal t) { return evalInt("iterations", 0, t); }
     void  FILE_PATH(fpreal t, UT_String& filePath) { evalString(filePath, "grammarFilePath", 0, t); }
 
-    int convertMeshToAdjacency(OP_Context& context, int inputIndex);
+    // int convertMeshToAdjacency(OP_Context& context, int inputIndex);
 
-
-
-
+    //
+    VBDSolver vbdSolver;
+    GA_DataId inputGeoDataID = -1;
 
 
 
@@ -92,5 +92,3 @@ private:
     int		myTotalPoints;
 };
 } // End HDK_Sample namespace
-
-#endif

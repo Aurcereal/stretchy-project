@@ -76,7 +76,7 @@ void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo) {
     }
 
     // Debug log the half edge mesh
-    std::cerr << "Debugging Half Edge Mesh " << std::endl;
+    /*std::cerr << "Debugging Half Edge Mesh " << std::endl;
     for (const uPtr<Face>& face : faces) {
         std::cerr << "\tFace " << face->id << std::endl;
 
@@ -85,5 +85,27 @@ void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo) {
             std::cerr << "Edge " << currEdge->id << " has Vertex " << currEdge->nextVertex->id << " and NextPtr " << currEdge->next->id << " and Face " << currEdge->face->id << " and Sym " << currEdge->sym->id << std::endl;
             currEdge = currEdge->next;
         } while (currEdge != face->edge);
+    }*/
+}
+
+void HalfEdgeMesh::LoadIntoExistingTopologicallySameHoudiniMesh(GU_Detail* geo) {
+    for (const uPtr<Vertex>& vert : vertices) {
+        geo->setPos3(vert->pointOffset, UT_Vector3(vert->pos.x, vert->pos.y, vert->pos.z));
     }
 }
+
+HalfEdgeMesh::HalfEdgeMesh(const HalfEdgeMesh& other) {
+    this->pointCountBound = other.pointCountBound;
+    for (const uPtr<Vertex>& oVert : other.vertices) {
+        vertices.push_back(mkU<Vertex>(*oVert));
+    }
+    for (const uPtr<HalfEdge>& oEdge : other.halfEdges) {
+        halfEdges.push_back(mkU<HalfEdge>(*oEdge));
+    }
+    for (const uPtr<Face>& oFace : other.faces) {
+        faces.push_back(mkU<Face>(*oFace));
+    }
+    this->pointOffsetToIndex = other.pointOffsetToIndex;
+}
+
+HalfEdgeMesh::HalfEdgeMesh() {}

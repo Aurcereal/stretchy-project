@@ -14,8 +14,8 @@
 #include <PRM/PRM_SpareData.h>
 #include <OP/OP_Operator.h>
 #include <OP/OP_OperatorTable.h>
-#include "half-edge-mesh.h"
 
+#include "half-edge-mesh.h"
 
 #include <limits.h>
 #include "VBDPlugin.h"
@@ -132,115 +132,23 @@ SOP_VBD::disableParms()
 }
 
 
-// TODO: This could be put into a 'glue' class that acts as info relay between houdini sop and our sim
-// Converts input mesh into an adjacency list format
-int SOP_VBD::convertMeshToAdjacency(OP_Context &context, int inputIndex) {
-    if (lockInputs(context) >= UT_ERROR_ABORT) {
-        // Inputs won't be changed while we're looked; ensure input data doesn't change during cook
-        // Will auto unlock when context goes out of scope
-        std::cerr << "Lock Failed" << std::endl;
-        return -1;
-    }
-
-    const GU_Detail* geo = inputGeo(inputIndex, context);
-    uPtr<HalfEdgeMesh> mesh = mkU<HalfEdgeMesh>();
-    mesh->CreateFromGUDetail(geo);
-    //int numPoints = geo->getNumPointOffsets();
-
-    //// TODO: use VBDSolver class and have this method fill its adjList up and then can simulate it and then cooksop will take it back
-    //// TODO: caching possible plan, solver stores a lastComputedFrameNumber and if the currFrame is AFTER that last computed frame, we can step from the lastcomputedframe to currframe in the sim
-    //uint geoPointCountBound = geo->getNumPointOffsets();
-    //std::vector<std::unordered_set<GA_Offset>> adjList(geoPointCountBound);
-
-    //uPtr<HalfEdgeMesh> mesh = mkU<HalfEdgeMesh>();
-    //std::unordered_map<uint, HalfEdge*> symMap;
-    //
-    //// Create vertices
-    //for (GA_Iterator pointIter = GA_Iterator(geo->getPointRange()); !pointIter.atEnd(); ++pointIter) {
-    //    GA_Offset pointOffset = pointIter.getOffset();
-    //    UT_Vector3 hpos = geo->getPos3(pointOffset);
-    //    vec3 pos = vec3(hpos.x(), hpos.y(), hpos.z());
-
-    //    mesh->addVertex(pointOffset, pos);
-    //}
-
-    //// Create half edge mesh
-    //for (GA_Iterator primIterator = GA_Iterator(geo->getPrimitiveRange()); !primIterator.atEnd(); ++primIterator) {
-    //    Face* f = mesh->addFace();
-
-    //    const GEO_Primitive* prim = geo->getGEOPrimitive(*primIterator);
-    //    int numVertices = prim->getVertexCount();
-
-    //    HalfEdge* currEdge, *firstEdge;
-    //    HalfEdge* prevEdge = nullptr;
-    //    Vertex* prevVertex = mesh->getVertexAtOffset(prim->getPointOffset(numVertices - 1));
-    //    Vertex* currVertex;
-
-    //    for (int i = 0; i < numVertices; i++) {
-    //        currVertex = mesh->getVertexAtOffset(prim->getPointOffset(i));
-
-    //        // Create edge & next
-    //        currEdge = mesh->addEdge();
-    //        currEdge->face = f;
-    //        currEdge->nextVertex = currVertex;
-    //        currVertex->incomingEdge = currEdge;
-    //        if (prevEdge == nullptr) {
-    //            // First edge
-    //            firstEdge = currEdge;
-    //            f->edge = firstEdge;
-    //        } else {
-    //            prevEdge->next = currEdge;
-    //        }
-
-    //        // Sym
-    //        uint pairID = vertexPairToID(geoPointCountBound, currVertex, prevVertex);
-    //        if (symMap.count(pairID) != 0) {
-    //            currEdge->sym = symMap[pairID];
-    //            symMap[pairID]->sym = currEdge;
-    //        }
-    //        else {
-    //            symMap[pairID] = currEdge;
-    //        }
-
-    //        // Adjacency list
-    //        int pntOffA = prim->getPointOffset(i);
-    //        int pntOffB = prim->getPointOffset((i + 1) % numVertices);
-
-    //        adjList[pntOffA].insert(pntOffB);
-    //        adjList[pntOffB].insert(pntOffA);
-
-    //        // Update prev
-    //        prevVertex = currVertex; 
-    //        prevEdge = currEdge;
-    //    }
-
-    //    // Link to start
-    //    currEdge->next = firstEdge;
-    //}
-
-    //// Debug log the adjacency array
-    ///*for (int pnt = 0; pnt < adjList.size(); pnt++) {
-    //    std::cerr << pnt << ": ";
-    //    for (GA_Offset neighbor : adjList[pnt]) {
-    //        std::cerr << neighbor << ", ";
-    //    }
-    //    std::cerr << std::endl;
-    //}*/
-
-    //// Debug log the half edge mesh
-    //std::cerr << "Debugging Half Edge Mesh " << std::endl;
-    //for (const uPtr<Face>& face : mesh->faces) {
-    //    std::cerr << "\tFace " << face->id << std::endl;
-    //    
-    //    HalfEdge* currEdge = face->edge;
-    //    do {
-    //        std::cerr << "Edge " << currEdge->id << " has Vertex " << currEdge->nextVertex->id << " and NextPtr " << currEdge->next->id << " and Face " << currEdge->face->id << " and Sym " << currEdge->sym->id << std::endl;
-    //        currEdge = currEdge->next;
-    //    } while (currEdge != face->edge);
-    //}
-     
-    return 0;
-}
+//// TODO: This could be put into a 'glue' class that acts as info relay between houdini sop and our sim
+//// Converts input mesh into an adjacency list format
+//int SOP_VBD::convertMeshToAdjacency(OP_Context &context, int inputIndex) {
+//    if (lockInputs(context) >= UT_ERROR_ABORT) {
+//        // Inputs won't be changed while we're looked; ensure input data doesn't change during cook
+//        // Will auto unlock when context goes out of scope
+//        std::cerr << "Lock Failed" << std::endl;
+//        return -1;
+//    }
+//
+//    const GU_Detail* geo = inputGeo(inputIndex, context);
+//
+//    uPtr<HalfEdgeMesh> mesh = mkU<HalfEdgeMesh>();
+//    mesh->CreateFromGUDetail(geo);
+//     
+//    return 0;
+//}
 
 OP_ERROR
 SOP_VBD::cookMySop(OP_Context &context)
@@ -256,7 +164,7 @@ SOP_VBD::cookMySop(OP_Context &context)
 
     std::cerr << "Current Time: " << currTime << std::endl;
 
-    convertMeshToAdjacency(context, 0);
+    // convertMeshToAdjacency(context, 0);
 
     int			 divisions;
     int			 xcoord =0, ycoord = 1, zcoord =2;
@@ -277,81 +185,98 @@ SOP_VBD::cookMySop(OP_Context &context)
 	    addWarning(SOP_MESSAGE, "Invalid divisions (just a test warning)");
 	    divisions = 4;
 	}
-	gdp->clearAndDestroy();  // Clear all geo of this node
+    if (lockInputs(context) >= UT_ERROR_ABORT) {
+        // Inputs won't be changed while we're looked; ensure input data doesn't change during cook
+        // Will auto unlock when context goes out of scope
+        std::cerr << "Lock Failed" << std::endl;
+    }
+    duplicateSource(0, context);//gdp->clearAndDestroy();  // Clear all geo of this node
+
+    if (gdp->getP()->getDataId() != inputGeoDataID) {
+        inputGeoDataID = gdp->getP()->getDataId();
+        std::cout << "New Input Mesh of Topo ID " << inputGeoDataID << ", Resetting Sim!" << std::endl;
+        uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();
+        inputMesh->CreateFromGUDetail(gdp);
+        vbdSolver.ResetSimulation(std::move(inputMesh));
+    }
 
 	// Start the interrupt server
 	if (boss->opStart("Building Sim Frame"))
 	{
-        GA_Offset ptoff;
-        UT_Vector3 tpos;
+        std::cerr << "Frame " << context.getFrame() << std::endl;
+        vbdSolver.SimulateUpToFrame(context.getFrame());
+        vbdSolver.lastSimulatedMesh->LoadIntoExistingTopologicallySameHoudiniMesh(gdp);
 
-        vec3 sta = vec3(0);// b.first;
-        vec3 end = vec3(1, 0, 0);// b.second;
-        vec3 mid = 0.5f * (sta + end);
+     //   GA_Offset ptoff;
+     //   UT_Vector3 tpos;
 
-        UT_Vector3 hmid = UT_Vector3(mid[0], mid[1], mid[2]);
+     //   vec3 sta = vec3(0);// b.first;
+     //   vec3 end = vec3(1, 0, 0);// b.second;
+     //   vec3 mid = 0.5f * (sta + end);
 
-        vec3 baseDir = vec3(0.0f, 1.0f, 0.0f);
-        vec3 dir = end - sta;
-        float length = glm::length(dir);
-        dir = normalize(dir);
-        vec3 axis = normalize(glm::cross(baseDir, dir));
-        float angle = std::acos(glm::dot(dir, baseDir));
+     //   UT_Vector3 hmid = UT_Vector3(mid[0], mid[1], mid[2]);
 
-        UT_Matrix4 transform;
-        transform.identity();
-        transform.scale(1.0f, length, 1.0f, 1.0f);
-        transform.rotate(UT_Vector3(axis[0], axis[1], axis[2]), angle);
-        transform.translate(hmid);
+     //   vec3 baseDir = vec3(0.0f, 1.0f, 0.0f);
+     //   vec3 dir = end - sta;
+     //   float length = glm::length(dir);
+     //   dir = normalize(dir);
+     //   vec3 axis = normalize(glm::cross(baseDir, dir));
+     //   float angle = std::acos(glm::dot(dir, baseDir));
 
-        float radius = 0.5f;
-        int cols = divisions;// 4;
+     //   UT_Matrix4 transform;
+     //   transform.identity();
+     //   transform.scale(1.0f, length, 1.0f, 1.0f);
+     //   transform.rotate(UT_Vector3(axis[0], axis[1], axis[2]), angle);
+     //   transform.translate(hmid);
 
-        // set pos of vertices
-        for (int i = 0; i < cols; i++)
-        {
-            float angle = (float)i / cols * M_PI * 2.0f;
-            tpos.x() = radius * cos(angle);
-            tpos.y() = 0.5f;
-            tpos.z() = radius * sin(angle);
-            tpos = tpos * transform;
+     //   float radius = 0.5f;
+     //   int cols = divisions;// 4;
 
-            ptoff = gdp->appendPointOffset();
-            // std::cerr << ptoff << std::endl;
-            gdp->setPos3(ptoff, tpos);
-        }
+     //   // set pos of vertices
+     //   for (int i = 0; i < cols; i++)
+     //   {
+     //       float angle = (float)i / cols * M_PI * 2.0f;
+     //       tpos.x() = radius * cos(angle);
+     //       tpos.y() = 0.5f;
+     //       tpos.z() = radius * sin(angle);
+     //       tpos = tpos * transform;
 
-        for (int i = 0; i < cols; i++)
-        {
-            float angle = (float)i / cols * M_PI * 2.0f;
-            tpos.x() = radius * cos(angle);
-            tpos.y() = -0.5f;
-            tpos.z() = radius * sin(angle);
-            tpos = tpos * transform;
+     //       ptoff = gdp->appendPointOffset();
+     //       // std::cerr << ptoff << std::endl;
+     //       gdp->setPos3(ptoff, tpos);
+     //   }
 
-            ptoff = gdp->appendPointOffset();
-            // std::cerr << ptoff << std::endl;
-            gdp->setPos3(ptoff, tpos);
-        }
+     //   for (int i = 0; i < cols; i++)
+     //   {
+     //       float angle = (float)i / cols * M_PI * 2.0f;
+     //       tpos.x() = radius * cos(angle);
+     //       tpos.y() = -0.5f;
+     //       tpos.z() = radius * sin(angle);
+     //       tpos = tpos * transform;
 
-        for (int i = 0; i < cols; i++)
-        {
-            int next = (i + 1) % cols;
+     //       ptoff = gdp->appendPointOffset();
+     //       // std::cerr << ptoff << std::endl;
+     //       gdp->setPos3(ptoff, tpos);
+     //   }
 
-            int lsm[4] = { i, next,cols + next,cols + i };
-            std::cerr << lsm[0] << '\t' << lsm[1] << '\t' << lsm[2] << '\t' << lsm[3] << std::endl;
+     //   for (int i = 0; i < cols; i++)
+     //   {
+     //       int next = (i + 1) % cols;
 
-            std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
-            GU_PrimPoly* poly = GU_PrimPoly::build(gdp, 4, GU_POLY_CLOSED);
-            std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
+     //       int lsm[4] = { i, next,cols + next,cols + i };
+     //       std::cerr << lsm[0] << '\t' << lsm[1] << '\t' << lsm[2] << '\t' << lsm[3] << std::endl;
 
-            poly->setPointOffset(0, lsm[0]);// off + i);
-            poly->setPointOffset(1, lsm[1]);// off + next);
-            poly->setPointOffset(2, lsm[2]);// off + cols + next);
-            poly->setPointOffset(3, lsm[3]);// off + cols + i);
+     //       std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
+     //       GU_PrimPoly* poly = GU_PrimPoly::build(gdp, 4, GU_POLY_CLOSED);
+     //       std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
 
-        }
-	    select(GU_SPrimitive);
+     //       poly->setPointOffset(0, lsm[0]);// off + i);
+     //       poly->setPointOffset(1, lsm[1]);// off + next);
+     //       poly->setPointOffset(2, lsm[2]);// off + cols + next);
+     //       poly->setPointOffset(3, lsm[3]);// off + cols + i);
+
+     //   }
+	    //select(GU_SPrimitive);
 	}
 
 	// Tell the interrupt server that we've completed. Must do this
