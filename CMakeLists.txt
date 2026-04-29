@@ -29,10 +29,15 @@ include_directories(
 set(SOURCE_FILES
     src/VBDPlugin.C
     src/main.cpp
+    src/half-edge-mesh.cpp
+    src/VBDSolver.cpp
 )
 
 set(HEADER_FILES
     src/VBDPlugin.h
+    src/defines.h
+    src/half-edge-mesh.h
+    src/VBDSolver.h
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADER_FILES})

@@ -96,16 +96,123 @@ void HalfEdgeMesh::LoadIntoExistingTopologicallySameHoudiniMesh(GU_Detail* geo) 
 
 HalfEdgeMesh::HalfEdgeMesh(const HalfEdgeMesh& other) {
     this->pointCountBound = other.pointCountBound;
+
+    unordered_map<int, HalfEdge*> halfEdgeIDToPtr;
+    unordered_map<int, Face*> faceIDToPtr;
+    unordered_map<int, Vertex*> vertexIDToPtr;
+
     for (const uPtr<Vertex>& oVert : other.vertices) {
         vertices.push_back(mkU<Vertex>(*oVert));
+        vertexIDToPtr[vertices[vertices.size() - 1]->id] = vertices[vertices.size() - 1].get();
     }
     for (const uPtr<HalfEdge>& oEdge : other.halfEdges) {
         halfEdges.push_back(mkU<HalfEdge>(*oEdge));
+        halfEdgeIDToPtr[halfEdges[halfEdges.size() - 1]->id] = halfEdges[halfEdges.size() - 1].get();
     }
     for (const uPtr<Face>& oFace : other.faces) {
         faces.push_back(mkU<Face>(*oFace));
+        faceIDToPtr[faces[faces.size() - 1]->id] = faces[faces.size() - 1].get();
     }
-    this->pointOffsetToIndex = other.pointOffsetToIndex;
+
+    for (uPtr<Vertex>& v : vertices) {
+        v->incomingEdge = halfEdgeIDToPtr[v->incomingEdge->id];
+    }
+    for (uPtr<HalfEdge>& h : halfEdges) {
+        h->next = halfEdgeIDToPtr[h->next->id];
+        h->sym = h->sym == nullptr ? nullptr : halfEdgeIDToPtr[h->sym->id];
+        h->nextVertex = vertexIDToPtr[h->nextVertex->id];
+        h->face = faceIDToPtr[h->face->id];
+    }
+    for (uPtr<Face>& f : faces) {
+        f->edge = halfEdgeIDToPtr[f->edge->id];
+    }
 }
 
-HalfEdgeMesh::HalfEdgeMesh() {}
+HalfEdgeMesh::HalfEdgeMesh() : pointCountBound() {}
+
+void HalfEdgeMesh::TriangulateAllFaces() {
+    int initialFaceCount = faces.size();
+    for (int i = 0; i < initialFaceCount; ++i) {
+        TriangulateFace(faces[i].get());
+    }
+}
+
+void HalfEdgeMesh::TriangulateFace(Face* face) {
+    HalfEdge* startEdge = face->edge;
+    HalfEdge* currentEdge = startEdge->next;
+
+    HalfEdge* prevEdge = startEdge;
+    while (prevEdge->next != startEdge) prevEdge = prevEdge->next;
+    Vertex* v1 = prevEdge->nextVertex;
+
+    HalfEdge* currNextForNew = startEdge;
+
+    while (currentEdge->next->next != startEdge) {
+
+        // Half Edge pointing to start vertex
+        HalfEdge* newEdge1 = addEdge();
+        newEdge1->next = currNextForNew;
+        newEdge1->nextVertex = v1; v1->incomingEdge = newEdge1;
+
+        // Half Edge pointing away from start vertex
+        HalfEdge* newEdge2 = addEdge();
+        newEdge2->next = currentEdge->next;
+        newEdge2->nextVertex = currentEdge->nextVertex;  currentEdge->nextVertex->incomingEdge = newEdge2;
+
+        currentEdge->next = newEdge1;
+
+        newEdge1->sym = newEdge2;
+        newEdge2->sym = newEdge1;
+
+        if (currentEdge == startEdge->next) {
+            // Connect to existing face
+            currentEdge->next->face = face;
+            face->edge = currentEdge->next;
+        }
+        else {
+            // Connect to new face
+            Face* newFace = addFace();
+
+            currentEdge->face = newFace; newFace->edge = currentEdge;
+            currentEdge->next->face = newFace;
+            currentEdge->next->next->face = newFace;
+        }
+
+        currNextForNew = newEdge2;
+        currentEdge = newEdge2->next;
+
+    }
+
+    Face* newFace = addFace();
+    currentEdge->next->next = currNextForNew;
+
+    currentEdge->face = newFace;
+    currentEdge->next->face = newFace;
+    currentEdge->next->next->face = newFace; newFace->edge = currentEdge->next->next;
+}
+
+void TriangulateConvexFace(Face* f, vector<vec3>* positions, vector<vec3>* colors, vector<vec3>* normals, vector<uint32_t>* indices) {
+
+    uint sideCount = 0;
+
+    vec3 faceNormal = normalize(cross(
+        f->edge->next->nextVertex->pos - f->edge->nextVertex->pos,
+        f->edge->next->next->nextVertex->pos - f->edge->nextVertex->pos));
+
+    HalfEdge* startEdge = f->edge;
+    HalfEdge* currEdge = startEdge;
+    do {
+        positions->push_back(currEdge->nextVertex->pos);
+        colors->push_back(vec3(1.0f)); // TODO: Can delete
+        normals->push_back(faceNormal);
+        currEdge = currEdge->next;
+        sideCount++;
+    } while (currEdge != startEdge);
+
+    for (int i = 0; i < sideCount - 2; i++) {
+        indices->push_back(positions->size() - sideCount);
+        indices->push_back(positions->size() - sideCount + i + 1);
+        indices->push_back(positions->size() - sideCount + i + 2);
+    }
+
+}

@@ -47,6 +47,8 @@ public:
     void LoadIntoExistingTopologicallySameHoudiniMesh(GU_Detail*);
     HalfEdgeMesh(const HalfEdgeMesh&);
     HalfEdgeMesh();
+
+    void TriangulateAllFaces();
 private:
     friend class VBDSolver;
     
@@ -90,4 +92,10 @@ private:
     inline uint vertexPairToID(Vertex* v1, Vertex* v2) {
         return glm::min(v1->pointOffset, v2->pointOffset) * pointCountBound + glm::max(v1->pointOffset, v2->pointOffset);
     }
+
+    //
+    void TriangulateFace(Face* face);
 };
+
+void TriangulateConvexFace(Face* f, vector<vec3>* positions, vector<vec3>* colors, vector<vec3>* normals, vector<uint32_t>* indices);
+

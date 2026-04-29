@@ -194,6 +194,7 @@ SOP_VBD::cookMySop(OP_Context &context)
 
     if (gdp->getP()->getDataId() != inputGeoDataID) {
         inputGeoDataID = gdp->getP()->getDataId();
+
         std::cout << "New Input Mesh of Topo ID " << inputGeoDataID << ", Resetting Sim!" << std::endl;
         uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();
         inputMesh->CreateFromGUDetail(gdp);
