@@ -225,7 +225,8 @@ SOP_VBD::cookMySop(OP_Context &context)
 	// Start the interrupt server
 	if (boss->opStart("Building Sim Frame"))
 	{
-        vbdSolver.dt = evalFloat(timeScaleName.getToken(), 0, currTime) / fps;
+        vbdSolver.frameDt = evalFloat(timeScaleName.getToken(), 0, currTime) / fps;
+        vbdSolver.subSteps = evalInt(subStepsName.getToken(), 0, currTime);
         
         vbdSolver.g = vec3(0.0f, -0.98f, 0.0f); // TODO: parametrize
         vbdSolver.iterCount = evalInt(iterationCountName.getToken(), 0, currTime);
@@ -239,7 +240,7 @@ SOP_VBD::cookMySop(OP_Context &context)
 
         std::cerr << "Frame " << context.getFrame() << std::endl;
         vbdSolver.SimulateUpToFrame(context.getFrame());
-        vbdSolver.lastSimulatedMesh->LoadIntoExistingTopologicallySameHoudiniMesh(gdp);
+        vbdSolver.GetCurrentMesh()->LoadIntoExistingTopologicallySameHoudiniMesh(gdp);
 	}
 
 	// Tell the interrupt server that we've completed. Must do this

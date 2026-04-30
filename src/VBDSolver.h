@@ -21,11 +21,19 @@ public:
 
 	void ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh = nullptr);
 	void SimulateUpToFrame(uint frameIndex);
-	uPtr<HalfEdgeMesh> lastSimulatedMesh;
+	inline HalfEdgeMesh* GetCurrentMesh() {
+		if (lastSimulatedFrame >= cachedPoses.size()) 
+			std::cerr << "Getting Mesh From Uninitialized Solver!" << std::endl;
+		return cachedPoses[lastSimulatedFrame].get();
+	}
 
 	//
 	int iterCount = 5;
-	float dt = 1.0f / 24.0f;
+	float frameDt = 1.0f / 24.0f;
+	inline float stepDt() {
+		return frameDt / (1.0f * subSteps);
+	}
+	uint subSteps = 1;
 	vec3 g = vec3(0.0f, -0.98f, 0.0f);
 	float m = 1.0f;
 
@@ -40,7 +48,7 @@ public:
 	//
 	PhysicsMaterialID currMaterial = SIMPLE_SPRING;
 private:
-	uPtr<HalfEdgeMesh> startPoseMesh = nullptr;
+	vector<uPtr<HalfEdgeMesh>> cachedPoses;
 	int lastSimulatedFrame;
 
 	void SimulateOneFrame();

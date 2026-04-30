@@ -6,30 +6,31 @@ bool IsConstrained(Vertex* vert) {
 	return abs(vert->pos.x) >= 0.97 && vert->pos.y > -0.01;//vert->pos.y > 0.75f;
 }
 
-VBDSolver::VBDSolver() : startPoseMesh(nullptr), lastSimulatedMesh(nullptr), lastSimulatedFrame(0) {}
+VBDSolver::VBDSolver() : cachedPoses(), lastSimulatedFrame(0) {}
 
 void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
-	if (newStartPoseMesh == nullptr && startPoseMesh == nullptr) {
+	if (newStartPoseMesh == nullptr && cachedPoses.size() == 0) {
 		std::cerr << "ERROR: ResetSimulation called without new start pose mesh when we don't have one!" << std::endl;
 		return;
 	}
+
+	cachedPoses.resize(1);
 
 	if (newStartPoseMesh != nullptr) {
 		facesInfo.clear();
 		constrainedVerts.clear();
 
-		startPoseMesh = mkU<HalfEdgeMesh>(*newStartPoseMesh);
-		startPoseMesh->TriangulateAllFaces();
+		cachedPoses[0] = mkU<HalfEdgeMesh>(*newStartPoseMesh);
+		cachedPoses[0]->TriangulateAllFaces();
 		ComputeFaceInfo();
 
-		for (const uPtr<Vertex>& v : startPoseMesh->vertices) {
+		for (const uPtr<Vertex>& v : cachedPoses[0]->vertices) {
 			if (IsConstrained(v.get()))
 				constrainedVerts.insert(v->id);
 		}
 	}
 
 	lastSimulatedFrame = 0;
-	lastSimulatedMesh = mkU<HalfEdgeMesh>(*startPoseMesh); // Copy
 }
 //void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 //	if (newStartPoseMesh != nullptr) {
@@ -49,22 +50,24 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 //}
 
 void VBDSolver::SimulateUpToFrame(uint frameIndex) {
-	// Past data is obsolete
 	if (lastSimulatedFrame > frameIndex) {
-		ResetSimulation();
-	}
-
-	int numUpdates = frameIndex - lastSimulatedFrame;
-	for (int i = 0; i < numUpdates; i++) {
-		SimulateOneFrame();
+		// Use the past cache
+		lastSimulatedFrame = frameIndex;
+		cachedPoses.resize(lastSimulatedFrame + 1);
+	} else {
+		// Need to simulate more
+		int numUpdates = frameIndex - lastSimulatedFrame;
+		for (int i = 0; i < numUpdates; i++) {
+			SimulateOneFrame();
+		}
 	}
 }
 
 vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 	if (vert->constrained) return vert->pos; // TODO need newest changes with map
 
-	vec3 inertiaForce = -m / (dt * dt) * (vert->pos - externalPos);
-	mat3 inertiaHessian = m / (dt * dt) * glm::identity<mat3>();
+	vec3 inertiaForce = -m / (stepDt() * stepDt()) * (vert->pos - externalPos);
+	mat3 inertiaHessian = m / (stepDt() * stepDt()) * glm::identity<mat3>();
 
 	vec3 neighborForce = vec3(0);
 	mat3 neighborHessian = mat3(0);
@@ -94,8 +97,8 @@ vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 vec3 VBDSolver::PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos) {
 	if (vert->constrained) return vert->pos;
 
-	vec3 inertiaForce = -m / (dt * dt) * (vert->pos - externalPos);
-	mat3 inertiaHessian = m / (dt * dt) * glm::identity<mat3>();
+	vec3 inertiaForce = -m / (stepDt() * stepDt()) * (vert->pos - externalPos);
+	mat3 inertiaHessian = m / (stepDt() * stepDt()) * glm::identity<mat3>();
 
 	vec3 neighborForce = vec3(0);
 	mat3 neighborHessian = mat3(0);
@@ -119,7 +122,7 @@ vec3 VBDSolver::PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec
 
 void VBDSolver::ComputeFaceInfo() {
 	// Foreach face, compute restArea and Dm^-1 using basis, record which vertices are which
-	for (const uPtr<Face>& f : startPoseMesh->faces) {
+	for (const uPtr<Face>& f : cachedPoses[0]->faces) {
 		facesInfo[f->id] = FaceInfo();
 		FaceInfo* fi = &facesInfo[f->id];
 
@@ -136,7 +139,7 @@ void VBDSolver::ComputeFaceInfo() {
 
 		array<vec3, 3> vp = array<vec3, 3>();
 		for (int i = 0; i < 3; i++) {
-			vp[i] = startPoseMesh->vertices[fi->vertIDs[i]]->pos;
+			vp[i] = cachedPoses[0]->vertices[fi->vertIDs[i]]->pos;
 		}
 
 		// Forming 2D orthonormal basis out of triangle
@@ -251,64 +254,48 @@ vec3 VBDSolver::ComputeForce(const HalfEdgeMesh& mesh, Face* face, Vertex* v) {
 }
 
 void VBDSolver::SimulateOneFrame() {
-	if (lastSimulatedMesh == nullptr) {
-		std::cerr << "ERROR: SimulateOneFrame() called with no lastSimulatedMesh" << std::endl;
+	if (cachedPoses.size() <= lastSimulatedFrame) {
+		std::cerr << "ERROR: SimulateOneFrame() called with not enough cachedPoses" << std::endl;
 		return;
 	}
-	lastSimulatedFrame++;
 
-	// Predict external positions & save positions
-	vector<vec3> oldPositions(lastSimulatedMesh->vertices.size());
-	vector<vec3> externalPredictedPositions(lastSimulatedMesh->vertices.size());
-	for (int i = 0; i < lastSimulatedMesh->vertices.size(); i++) {
-		vec3 externalAcc = g;
-		oldPositions[i] = lastSimulatedMesh->vertices[i]->pos;
-		externalPredictedPositions[i] = lastSimulatedMesh->vertices[i]->pos + lastSimulatedMesh->vertices[i]->vel * dt + externalAcc * dt * dt;
-	}
+	uPtr<HalfEdgeMesh> simulatingMesh = mkU<HalfEdgeMesh>(*cachedPoses[lastSimulatedFrame]);
 
-#ifdef SCRATCH
-	// Scratch
-	uPtr<HalfEdgeMesh> scratchMesh = mkU<HalfEdgeMesh>(*lastSimulatedMesh);
-
-	// Gaussian Seidel Iterations
-	HalfEdgeMesh* currOldMesh, * currNewMesh;
-	for (int i = 0; i < iterCount; i++) {
-		currOldMesh = i % 2 == 0 ? lastSimulatedMesh.get() : scratchMesh.get();
-		currNewMesh = i % 2 == 0 ? scratchMesh.get() : lastSimulatedMesh.get();
-
-		for (int i = 0; i < scratchMesh->vertices.size(); i++) {
-			currNewMesh->vertices[i]->pos = PredictPosition(currOldMesh->vertices[i].get(), externalPredictedPositions[i]);
+	for (int i = 0; i < subSteps; i++) {
+		// Predict external positions & save positions
+		vector<vec3> oldPositions(simulatingMesh->vertices.size());
+		vector<vec3> externalPredictedPositions(simulatingMesh->vertices.size());
+		for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
+			vec3 externalAcc = g;
+			oldPositions[i] = simulatingMesh->vertices[i]->pos;
+			externalPredictedPositions[i] = simulatingMesh->vertices[i]->pos + simulatingMesh->vertices[i]->vel * stepDt() + externalAcc * stepDt() * stepDt();
 		}
-	}
 
-	// Velocity update
-	for (int i = 0; i < currNewMesh->vertices.size(); i++) {
-		currNewMesh->vertices[i]->vel = (1.0f / dt) * (currNewMesh->vertices[i]->pos - oldPositions[i]);
-	}
+		for (int i = 0; i < iterCount; i++) {
+			for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
+				Vertex* v = simulatingMesh->vertices[i].get();
 
-	// Copy back
-	lastSimulatedMesh = mkU<HalfEdgeMesh>(*currNewMesh); // no need to copy again
-#else
-	for (int i = 0; i < iterCount; i++) {
-		for (int i = 0; i < lastSimulatedMesh->vertices.size(); i++) {
-			Vertex* v = lastSimulatedMesh->vertices[i].get();
+				switch (currMaterial) {
+				case SIMPLE_SPRING:
+					v->pos = PredictPosition(v, externalPredictedPositions[i]);
+					break;
 
-			switch (currMaterial) {
-			case SIMPLE_SPRING:
-				v->pos = PredictPosition(v, externalPredictedPositions[i]);
-				break;
-
-			case STVK_CLOTH:
-				v->pos = PredictPositionCloth(*lastSimulatedMesh, v, externalPredictedPositions[i]);
-				break;
+				case STVK_CLOTH:
+					v->pos = PredictPositionCloth(*simulatingMesh, v, externalPredictedPositions[i]);
+					break;
+				}
 			}
 		}
+
+		for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
+			Vertex* v = simulatingMesh->vertices[i].get();
+			v->vel = (1.0f / stepDt()) * (v->pos - oldPositions[i]);
+			v->pos = oldPositions[i] + 0.98f * v->vel * stepDt(); // DAMPING
+		}
 	}
 
-	for (int i = 0; i < lastSimulatedMesh->vertices.size(); i++) {
-		Vertex* v = lastSimulatedMesh->vertices[i].get();
-		v->vel = (1.0f / dt) * (v->pos - oldPositions[i]);
-		v->pos = oldPositions[i] + 0.98f * v->vel * dt; // DAMPING
-	}
-#endif
+	++lastSimulatedFrame;
+	cachedPoses.resize(lastSimulatedFrame + 1);
+	cachedPoses[lastSimulatedFrame] = std::move(simulatingMesh);
+
 }
