@@ -21,6 +21,8 @@ struct Vertex {
     HalfEdge* incomingEdge;
 
     vec3 vel;
+
+    bool constrained;
 };
 
 struct HalfEdge {
@@ -78,6 +80,7 @@ private:
         v->pos = pos;
         v->id = vertices.size() - 1;
         v->vel = vec3(0.0f); // TODO: initial vel could be attrib or parameter
+        v->constrained = false;
 
         // Update map
         pointOffsetToIndex[pointOffset] = vertices.size() - 1;

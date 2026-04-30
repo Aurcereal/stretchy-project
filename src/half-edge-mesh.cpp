@@ -11,13 +11,22 @@ void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo) {
     std::vector<std::unordered_set<GA_Offset>> adjList(pointCountBound);
     std::unordered_map<uint, HalfEdge*> symMap;
 
+    //
+    const char* constrainedPointsGroupName = "TEMPCONSTRAINTGROUP"; // TODO: parametrize
+    const GA_PointGroup* group = geo->findPointGroup(constrainedPointsGroupName);
+    if (group == nullptr) {
+        std::cerr << "Constraint Group \"" << constrainedPointsGroupName << " doesn't exist!" << std::endl;
+    }
+
     // Create vertices
     for (GA_Iterator pointIter = GA_Iterator(geo->getPointRange()); !pointIter.atEnd(); ++pointIter) {
         GA_Offset pointOffset = pointIter.getOffset();
         UT_Vector3 hpos = geo->getPos3(pointOffset);
         vec3 pos = vec3(hpos.x(), hpos.y(), hpos.z());
 
-        addVertex(pointOffset, pos);
+        auto v = addVertex(pointOffset, pos);
+        if (group != nullptr && group->containsOffset(pointOffset))
+            v->constrained = true;
     }
 
     // Create half edge mesh

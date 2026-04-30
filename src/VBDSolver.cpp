@@ -61,7 +61,7 @@ void VBDSolver::SimulateUpToFrame(uint frameIndex) {
 }
 
 vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
-	if (constrainedVerts.count(vert->id) != 0) return vert->pos; // TODO need newest changes with map
+	if (vert->constrained) return vert->pos; // TODO need newest changes with map
 
 	vec3 inertiaForce = -m / (dt * dt) * (vert->pos - externalPos);
 	mat3 inertiaHessian = m / (dt * dt) * glm::identity<mat3>();
@@ -92,7 +92,7 @@ vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 }
 
 vec3 VBDSolver::PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos) {
-	if (constrainedVerts.count(vert->id) != 0) return vert->pos;
+	if (vert->constrained) return vert->pos;
 
 	vec3 inertiaForce = -m / (dt * dt) * (vert->pos - externalPos);
 	mat3 inertiaHessian = m / (dt * dt) * glm::identity<mat3>();
