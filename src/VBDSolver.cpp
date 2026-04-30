@@ -2,6 +2,10 @@
 #include <gtc/matrix_transform.hpp>
 #include "helper/math.h"
 
+bool IsConstrained(Vertex* vert) {
+	return abs(vert->pos.x) >= 0.97 && vert->pos.y > -0.01;//vert->pos.y > 0.75f;
+}
+
 VBDSolver::VBDSolver() : startPoseMesh(nullptr), lastSimulatedMesh(nullptr), lastSimulatedFrame(0) {}
 
 void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
@@ -12,10 +16,16 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 
 	if (newStartPoseMesh != nullptr) {
 		facesInfo.clear();
+		constrainedVerts.clear();
 
 		startPoseMesh = mkU<HalfEdgeMesh>(*newStartPoseMesh);
 		startPoseMesh->TriangulateAllFaces();
 		ComputeFaceInfo();
+
+		for (const uPtr<Vertex>& v : startPoseMesh->vertices) {
+			if (IsConstrained(v.get()))
+				constrainedVerts.insert(v->id);
+		}
 	}
 
 	lastSimulatedFrame = 0;
@@ -50,12 +60,8 @@ void VBDSolver::SimulateUpToFrame(uint frameIndex) {
 	}
 }
 
-bool IsConstrained(Vertex* vert) {
-	return abs(vert->pos.x) >= 0.97 && vert->pos.y > -0.01;//vert->pos.y > 0.75f;
-}
-
 vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
-	if (IsConstrained(vert)) return vert->pos; // TODO need newest changes with map
+	if (constrainedVerts.count(vert->id) != 0) return vert->pos; // TODO need newest changes with map
 
 	vec3 inertiaForce = -m / (dt * dt) * (vert->pos - externalPos);
 	mat3 inertiaHessian = m / (dt * dt) * glm::identity<mat3>();
@@ -86,7 +92,7 @@ vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 }
 
 vec3 VBDSolver::PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos) {
-	if (IsConstrained(vert)) return vert->pos;
+	if (constrainedVerts.count(vert->id) != 0) return vert->pos;
 
 	vec3 inertiaForce = -m / (dt * dt) * (vert->pos - externalPos);
 	mat3 inertiaHessian = m / (dt * dt) * glm::identity<mat3>();
@@ -302,6 +308,7 @@ void VBDSolver::SimulateOneFrame() {
 	for (int i = 0; i < lastSimulatedMesh->vertices.size(); i++) {
 		Vertex* v = lastSimulatedMesh->vertices[i].get();
 		v->vel = (1.0f / dt) * (v->pos - oldPositions[i]);
+		v->pos = oldPositions[i] + 0.98f * v->vel * dt; // DAMPING
 	}
 #endif
 }

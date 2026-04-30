@@ -3,6 +3,7 @@
 #include "defines.h"
 #include "half-edge-mesh.h"
 #include <iostream>
+#include <unordered_set>
 
 typedef int PhysicsMaterialID;
 #define SIMPLE_SPRING 0
@@ -51,6 +52,7 @@ private:
 	vec3 ComputeForce(const HalfEdgeMesh& mesh, Face* face, Vertex* v);
 
 	std::unordered_map<int, FaceInfo> facesInfo;
+	std::unordered_set<int> constrainedVerts;
 
 	//
 	PhysicsMaterialID currMaterial = SIMPLE_SPRING;
