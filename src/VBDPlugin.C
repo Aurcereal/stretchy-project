@@ -28,6 +28,9 @@
 #include <vector>
 #include <unordered_set>
 #include "defines.h"
+
+//#include <CH/CH_Manager.h>
+//#include <OP/OP_Director.h>
 using namespace glm;
 using namespace std;
 using namespace HDK_Sample;
@@ -50,26 +53,47 @@ newSopOperator(OP_OperatorTable *table)
 	    );
 }
 
-static PRM_Name	angleName("angle", "Angle"); // (internal, label)
-static PRM_Name	stepSizeName("stepSize", "StepSize");
-static PRM_Name	iterationsName("iterations", "Iterations");
-static PRM_Name	fileName("grammarFilePath", "GrammarFilePath");
+//
+static PRM_Name timeScaleName("timeScale", "TimeScale");
+static PRM_Name subStepsName("subSteps", "Substeps");
+static PRM_Name iterationCountName("gaussSeidelIterations", "GaussSeidelIterations");
 
-static PRM_Default angleDefault(30.0);
-static PRM_Default stepSizeDefault(1.0);
-static PRM_Default iterationsDefault(2);
-static PRM_Default fileDefault(0, "UNDEFINED");
+static PRM_Name physicsMaterialName("physicsMaterial", "PhysicsMaterial");
 
-static PRM_Range angleRange(PRM_RANGE_RESTRICTED, 0, PRM_RANGE_UI, 360);
-static PRM_Range stepSizeRange(PRM_RANGE_RESTRICTED, 0, PRM_RANGE_UI, 5);
-static PRM_Range iterationsRange(PRM_RANGE_RESTRICTED, 0, PRM_RANGE_UI, 8);
+static PRM_Name springConstantName("springConstant", "SpringConstant");
+static PRM_Name restLengthName("restLength", "RestLength");
+
+static PRM_Name areaChangeResistanceName("areaChangeResistance", "AreaChangeResistance");
+static PRM_Name shearResistanceName("shearResistanceName", "ShearResistanceName");
+
+static PRM_Name constraintGroupNameName("constraintGroupName", "ConstraintGroupName");
+
+//
+static PRM_Default timeScaleDefault(1.0);
+static PRM_Default subStepsDefault(1);
+static PRM_Default iterationCountDefault(5);
+
+static PRM_Default physicsMaterialDefault(0);
+
+static PRM_Default springConstantDefault(150.0);
+static PRM_Default restLengthDefault(0.3);
+
+static PRM_Default areaChangeResistanceDefault(1.0);
+static PRM_Default shearResistanceDefault(1.0);
+
+static PRM_Default constraintGroupNameDefault(0, "ConstraintGroup");
 
 PRM_Template
 SOP_VBD::myTemplateList[] = {
-   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &angleName, &angleDefault, 0, &angleRange),
-   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &stepSizeName, &stepSizeDefault, 0, &stepSizeRange),
-   PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &iterationsName, &iterationsDefault, 0, &iterationsRange),
-   PRM_Template(PRM_FILE, 1, &fileName, &fileDefault),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &timeScaleName, &timeScaleDefault, 0),
+   PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &subStepsName, &subStepsDefault, 0),
+   PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &iterationCountName, &iterationCountDefault, 0),
+   PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &springConstantName, &springConstantDefault, 0),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &physicsMaterialName, &physicsMaterialDefault, 0),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &restLengthName, &restLengthDefault, 0),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &areaChangeResistanceName, &areaChangeResistanceDefault, 0),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &shearResistanceName, &shearResistanceDefault, 0),
+   PRM_Template(PRM_STRING, PRM_Template::PRM_EXPORT_MIN, 1, &constraintGroupNameName, &constraintGroupNameDefault, 0),
    PRM_Template()
 };
 
@@ -153,14 +177,10 @@ SOP_VBD::disableParms()
 OP_ERROR
 SOP_VBD::cookMySop(OP_Context &context)
 {
-	fpreal currTime = context.getTime();
+    /*CH_Manager* channelManager = OPgetDirector()->getChannelManager();*/
+    float fps = 24.0f;// channelManager->getSamplesPerSec();
 
-	float angle; angle = ANGLE(currTime);
-    float stepSize; stepSize = STEP_SIZE(currTime);
-    uint iterationCount; iterationCount = static_cast<uint>(ITERATIONS(currTime));
-    UT_String hFilePath;
-    FILE_PATH(currTime, hFilePath);
-    string filePath = hFilePath.toStdString();
+	fpreal currTime = context.getTime();
 
     std::cerr << "Current Time: " << currTime << std::endl;
 
@@ -192,92 +212,34 @@ SOP_VBD::cookMySop(OP_Context &context)
     }
     duplicateSource(0, context);//gdp->clearAndDestroy();  // Clear all geo of this node
 
-    if (gdp->getP()->getDataId() != inputGeoDataID) {
+    if (gdp->getP()->getDataId() != inputGeoDataID) { // TODO: check for change in group and stuff
         inputGeoDataID = gdp->getP()->getDataId();
 
         std::cout << "New Input Mesh of Topo ID " << inputGeoDataID << ", Resetting Sim!" << std::endl;
         uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();
-        inputMesh->CreateFromGUDetail(gdp);
+        UT_String groupNameStr; evalString(groupNameStr, constraintGroupNameName.getToken(), 0, currTime);
+        inputMesh->CreateFromGUDetail(gdp, groupNameStr);
         vbdSolver.ResetSimulation(std::move(inputMesh));
     }
 
 	// Start the interrupt server
 	if (boss->opStart("Building Sim Frame"))
 	{
+        vbdSolver.dt = evalFloat(timeScaleName.getToken(), 0, currTime) / fps;
+        
+        vbdSolver.g = vec3(0.0f, -0.98f, 0.0f); // TODO: parametrize
+        vbdSolver.iterCount = evalInt(iterationCountName.getToken(), 0, currTime);
+        vbdSolver.currMaterial = evalInt(physicsMaterialName.getToken(), 0, currTime);
+
+        vbdSolver.k = evalFloat(springConstantName.getToken(), 0, currTime);
+        vbdSolver.restLen = evalFloat(restLengthName.getToken(), 0, currTime);
+
+        vbdSolver.u = evalFloat(shearResistanceName.getToken(), 0, currTime);
+        vbdSolver.lambda = evalFloat(areaChangeResistanceName.getToken(), 0, currTime);
+
         std::cerr << "Frame " << context.getFrame() << std::endl;
         vbdSolver.SimulateUpToFrame(context.getFrame());
         vbdSolver.lastSimulatedMesh->LoadIntoExistingTopologicallySameHoudiniMesh(gdp);
-
-     //   GA_Offset ptoff;
-     //   UT_Vector3 tpos;
-
-     //   vec3 sta = vec3(0);// b.first;
-     //   vec3 end = vec3(1, 0, 0);// b.second;
-     //   vec3 mid = 0.5f * (sta + end);
-
-     //   UT_Vector3 hmid = UT_Vector3(mid[0], mid[1], mid[2]);
-
-     //   vec3 baseDir = vec3(0.0f, 1.0f, 0.0f);
-     //   vec3 dir = end - sta;
-     //   float length = glm::length(dir);
-     //   dir = normalize(dir);
-     //   vec3 axis = normalize(glm::cross(baseDir, dir));
-     //   float angle = std::acos(glm::dot(dir, baseDir));
-
-     //   UT_Matrix4 transform;
-     //   transform.identity();
-     //   transform.scale(1.0f, length, 1.0f, 1.0f);
-     //   transform.rotate(UT_Vector3(axis[0], axis[1], axis[2]), angle);
-     //   transform.translate(hmid);
-
-     //   float radius = 0.5f;
-     //   int cols = divisions;// 4;
-
-     //   // set pos of vertices
-     //   for (int i = 0; i < cols; i++)
-     //   {
-     //       float angle = (float)i / cols * M_PI * 2.0f;
-     //       tpos.x() = radius * cos(angle);
-     //       tpos.y() = 0.5f;
-     //       tpos.z() = radius * sin(angle);
-     //       tpos = tpos * transform;
-
-     //       ptoff = gdp->appendPointOffset();
-     //       // std::cerr << ptoff << std::endl;
-     //       gdp->setPos3(ptoff, tpos);
-     //   }
-
-     //   for (int i = 0; i < cols; i++)
-     //   {
-     //       float angle = (float)i / cols * M_PI * 2.0f;
-     //       tpos.x() = radius * cos(angle);
-     //       tpos.y() = -0.5f;
-     //       tpos.z() = radius * sin(angle);
-     //       tpos = tpos * transform;
-
-     //       ptoff = gdp->appendPointOffset();
-     //       // std::cerr << ptoff << std::endl;
-     //       gdp->setPos3(ptoff, tpos);
-     //   }
-
-     //   for (int i = 0; i < cols; i++)
-     //   {
-     //       int next = (i + 1) % cols;
-
-     //       int lsm[4] = { i, next,cols + next,cols + i };
-     //       std::cerr << lsm[0] << '\t' << lsm[1] << '\t' << lsm[2] << '\t' << lsm[3] << std::endl;
-
-     //       std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
-     //       GU_PrimPoly* poly = GU_PrimPoly::build(gdp, 4, GU_POLY_CLOSED);
-     //       std::cerr << "Point Count: " << gdp->getNumPoints() << std::endl;
-
-     //       poly->setPointOffset(0, lsm[0]);// off + i);
-     //       poly->setPointOffset(1, lsm[1]);// off + next);
-     //       poly->setPointOffset(2, lsm[2]);// off + cols + next);
-     //       poly->setPointOffset(3, lsm[3]);// off + cols + i);
-
-     //   }
-	    //select(GU_SPrimitive);
 	}
 
 	// Tell the interrupt server that we've completed. Must do this

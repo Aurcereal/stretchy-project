@@ -6,13 +6,11 @@
 #include <GU/GU_Detail.h>
 #include <GU/GU_PrimPoly.h>
 
-void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo) {
+void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo, const char* constrainedPointsGroupName) {
     pointCountBound = geo->getNumPointOffsets();
     std::vector<std::unordered_set<GA_Offset>> adjList(pointCountBound);
     std::unordered_map<uint, HalfEdge*> symMap;
 
-    //
-    const char* constrainedPointsGroupName = "TEMPCONSTRAINTGROUP"; // TODO: parametrize
     const GA_PointGroup* group = geo->findPointGroup(constrainedPointsGroupName);
     if (group == nullptr) {
         std::cerr << "Constraint Group \"" << constrainedPointsGroupName << " doesn't exist!" << std::endl;

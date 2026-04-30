@@ -44,7 +44,7 @@ class VBDSolver;
 
 class HalfEdgeMesh {
 public:
-    void CreateFromGUDetail(const GU_Detail*);
+    void CreateFromGUDetail(const GU_Detail*, const char* constrainedPointGroupName);
     // void ConvertToHoudiniMesh(GU_Detail*);
     void LoadIntoExistingTopologicallySameHoudiniMesh(GU_Detail*);
     HalfEdgeMesh(const HalfEdgeMesh&);

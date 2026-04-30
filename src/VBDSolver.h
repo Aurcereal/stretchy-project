@@ -23,16 +23,7 @@ public:
 	void SimulateUpToFrame(uint frameIndex);
 	uPtr<HalfEdgeMesh> lastSimulatedMesh;
 
-private:
-	friend class VBDManager;
-
-	uPtr<HalfEdgeMesh> startPoseMesh = nullptr;
-	int lastSimulatedFrame;
-
-	void SimulateOneFrame();
-	vec3 PredictPosition(Vertex* vert, vec3 externalPos);
-	vec3 PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos);
-
+	//
 	int iterCount = 5;
 	float dt = 1.0f / 24.0f;
 	vec3 g = vec3(0.0f, -0.98f, 0.0f);
@@ -46,6 +37,16 @@ private:
 	float u = 1.0f;
 	float lambda = 1.0f;
 
+	//
+	PhysicsMaterialID currMaterial = SIMPLE_SPRING;
+private:
+	uPtr<HalfEdgeMesh> startPoseMesh = nullptr;
+	int lastSimulatedFrame;
+
+	void SimulateOneFrame();
+	vec3 PredictPosition(Vertex* vert, vec3 externalPos);
+	vec3 PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos);
+
 	// For StVK Cloth, different ComputeHessian/ComputeForce functions can be written for different materials, but the 'element' changes too often to generalize (simple spring uses vert, cloth stvk uses triangle, later materials will use tetrahedrons)
 	void ComputeFaceInfo();
 	mat3 ComputeHessian(const HalfEdgeMesh& mesh, Face* face, Vertex*);
@@ -53,7 +54,4 @@ private:
 
 	std::unordered_map<int, FaceInfo> facesInfo;
 	std::unordered_set<int> constrainedVerts;
-
-	//
-	PhysicsMaterialID currMaterial = SIMPLE_SPRING;
 };
