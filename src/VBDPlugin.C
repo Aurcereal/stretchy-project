@@ -14,6 +14,7 @@
 #include <PRM/PRM_SpareData.h>
 #include <OP/OP_Operator.h>
 #include <OP/OP_OperatorTable.h>
+#include <OP/OP_Director.h>
 
 #include "half-edge-mesh.h"
 
@@ -174,37 +175,63 @@ SOP_VBD::disableParms()
 //    return 0;
 //}
 
+/*static PRM_Name timeScaleName("timeScale", "TimeScale");
+static PRM_Name subStepsName("subSteps", "Substeps");
+static PRM_Name iterationCountName("gaussSeidelIterations", "GaussSeidelIterations");
+
+static PRM_Name physicsMaterialName("physicsMaterial", "PhysicsMaterial");
+
+static PRM_Name springConstantName("springConstant", "SpringConstant");
+static PRM_Name restLengthName("restLength", "RestLength");
+
+static PRM_Name areaChangeResistanceName("areaChangeResistance", "AreaChangeResistance");
+static PRM_Name shearResistanceName("shearResistanceName", "ShearResistanceName");
+
+static PRM_Name constraintGroupNameName("constraintGroupName", "ConstraintGroupName");
+*/
+
+// TODO: put in solver
+SolverParams SOP_VBD::GetParams(fpreal time) {
+    SolverParams params;
+
+    CH_Manager* channelManager = OPgetDirector()->getChannelManager();
+    float fps = channelManager->getSamplesPerSec();
+
+    params.frameDt = evalFloat(timeScaleName.getToken(), 0, time) / fps;
+    params.subSteps = evalInt(subStepsName.getToken(), 0, time);
+
+    params.g = vec3(0.0f, -0.98f, 0.0f); // TODO: parametrize
+    params.iterCount = evalInt(iterationCountName.getToken(), 0, time);
+    params.currMaterial = evalInt(physicsMaterialName.getToken(), 0, time);
+
+    params.k = evalFloat(springConstantName.getToken(), 0, time);
+    params.restLen = evalFloat(restLengthName.getToken(), 0, time);
+
+    params.u = evalFloat(shearResistanceName.getToken(), 0, time);
+    params.lambda = evalFloat(areaChangeResistanceName.getToken(), 0, time);
+
+    params.m = 1.0f; // TODO: parametrize
+
+    return params;
+}
+
 OP_ERROR
 SOP_VBD::cookMySop(OP_Context &context)
 {
-    /*CH_Manager* channelManager = OPgetDirector()->getChannelManager();*/
-    float fps = 24.0f;// channelManager->getSamplesPerSec();
+    
 
 	fpreal currTime = context.getTime();
 
     std::cerr << "Current Time: " << currTime << std::endl;
 
-    // convertMeshToAdjacency(context, 0);
-
-    int			 divisions;
-    int			 xcoord =0, ycoord = 1, zcoord =2;
-    UT_Interrupt	*boss;
-
-    // Since we don't have inputs, we don't need to lock them.
-
-    divisions  = glm::ceil(4+currTime);
-    myTotalPoints = divisions;		// Set the NPT local variable value, TODO: NOT ACCURATE RN FOR THE USER!
+    UT_Interrupt* boss;
     myCurrPoint   = 0;			// Initialize the PT local variable
+
 
     // Check to see that there hasn't been a critical error in cooking the SOP.
     if (error() < UT_ERROR_ABORT)
     {
 	boss = UTgetInterrupt();
-	if (divisions < 4)
-	{
-	    addWarning(SOP_MESSAGE, "Invalid divisions (just a test warning)");
-	    divisions = 4;
-	}
     if (lockInputs(context) >= UT_ERROR_ABORT) {
         // Inputs won't be changed while we're looked; ensure input data doesn't change during cook
         // Will auto unlock when context goes out of scope
@@ -212,35 +239,83 @@ SOP_VBD::cookMySop(OP_Context &context)
     }
     duplicateSource(0, context);//gdp->clearAndDestroy();  // Clear all geo of this node
 
-    if (gdp->getP()->getDataId() != inputGeoDataID) { // TODO: check for change in group and stuff
+    // Constraint Group
+    int prevConstraintGroupID = constraintGroupID;
+    UT_String groupNameStr; evalString(groupNameStr, constraintGroupNameName.getToken(), 0, currTime);
+    const GA_PointGroup* group = gdp->findPointGroup(groupNameStr);
+    if (group == nullptr) {
+        constraintGroupID = -1;
+        std::cerr << "Constraint Group \"" << groupNameStr << "\" doesn't exist!" << std::endl;
+    } else {
+        constraintGroupID = group->getDataId();
+        std::cerr << "Constraint Group ID: " << constraintGroupID << std::endl;
+    }
+
+    if (prevConstraintGroupID != constraintGroupID || gdp->getP()->getDataId() != inputGeoDataID) { // TODO: check for change in group and stuff
         inputGeoDataID = gdp->getP()->getDataId();
 
-        std::cout << "New Input Mesh of Topo ID " << inputGeoDataID << ", Resetting Sim!" << std::endl;
-        uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();
-        UT_String groupNameStr; evalString(groupNameStr, constraintGroupNameName.getToken(), 0, currTime);
-        inputMesh->CreateFromGUDetail(gdp, groupNameStr);
+        uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();        
+        inputMesh->CreateFromGUDetail(gdp, group);
+
         vbdSolver.ResetSimulation(std::move(inputMesh));
     }
+
+    // Parameters & Checking for Changes
+    bool paramsChanged = false;
+    auto channelManager = OPgetDirector()->getChannelManager();
+    int frameCount =
+        channelManager->getSample(channelManager->getGlobalEnd()) -
+        channelManager->getSample(channelManager->getGlobalStart()) + 1;
+    if (cachedParams.size() != frameCount) {
+        std::cerr << "Was size " << cachedParams.size() << " but frame count is " << frameCount << std::endl;
+        paramsChanged = true;
+        cachedParams.resize(frameCount);
+    }
+    for (int i = 0; i < frameCount; i++) {
+        auto newParam = GetParams(
+            channelManager->getTime(
+                channelManager->getSample(channelManager->getGlobalStart()) + i
+            )
+        );
+        if (!paramsChanged && !(cachedParams[i] == newParam)) {
+            std::cerr << "New param found at " << i << std::endl;
+            paramsChanged = true;
+        }
+        cachedParams[i] = newParam;
+    }
+    if (paramsChanged) {
+        std::cerr << "Params changed at " << context.getFrame() << std::endl;
+        vbdSolver.TruncateSimulation(context.getFrame());
+        vbdSolver.SetDirty();
+    }
+
+    //bool paramsChanged = false;
+    //auto channelManager = OPgetDirector()->getChannelManager();
+    //int frameCount =
+    //    channelManager->getSample(channelManager->getGlobalEnd()) -
+    //    channelManager->getSample(channelManager->getGlobalStart()) + 1;
+    //if (cachedParams.size() != frameCount) {
+    //    std::cerr << "Was size " << cachedParams.size() << " but frame count is " << frameCount << std::endl;
+    //    cachedParams.resize(frameCount);
+    //}
+    //std::cerr << "Curr Frame: " << context.getFrame() << " Curr Size: " << frameCount << std::endl;
+    //auto newParam = GetParams(currTime);
+    //std::cerr << "Old dt: " << cachedParams[context.getFrame()].frameDt << " New dt: " << newParam.frameDt << std::endl;
+    //if (!(newParam == cachedParams[context.getFrame()])) {
+    //    paramsChanged = true;
+    //    std::cerr << "Params changed on " << context.getFrame() << std::endl;
+    //    cachedParams[context.getFrame()] = newParam;
+    //} // TODO: check if input geometry had its groups changed or anything
+    //if (paramsChanged) {
+    //    std::cerr << "Params changed during " << context.getFrame() << std::endl;
+    //}
 
 	// Start the interrupt server
 	if (boss->opStart("Building Sim Frame"))
 	{
-        vbdSolver.frameDt = evalFloat(timeScaleName.getToken(), 0, currTime) / fps;
-        vbdSolver.subSteps = evalInt(subStepsName.getToken(), 0, currTime);
-        
-        vbdSolver.g = vec3(0.0f, -0.98f, 0.0f); // TODO: parametrize
-        vbdSolver.iterCount = evalInt(iterationCountName.getToken(), 0, currTime);
-        vbdSolver.currMaterial = evalInt(physicsMaterialName.getToken(), 0, currTime);
-
-        vbdSolver.k = evalFloat(springConstantName.getToken(), 0, currTime);
-        vbdSolver.restLen = evalFloat(restLengthName.getToken(), 0, currTime);
-
-        vbdSolver.u = evalFloat(shearResistanceName.getToken(), 0, currTime);
-        vbdSolver.lambda = evalFloat(areaChangeResistanceName.getToken(), 0, currTime);
-
         std::cerr << "Frame " << context.getFrame() << std::endl;
         vbdSolver.SimulateUpToFrame(context.getFrame());
-        vbdSolver.GetCurrentMesh()->LoadIntoExistingTopologicallySameHoudiniMesh(gdp);
+        vbdSolver.GetMesh(context.getFrame())->LoadIntoExistingTopologicallySameHoudiniMesh(gdp);
 	}
 
 	// Tell the interrupt server that we've completed. Must do this
