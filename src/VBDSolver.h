@@ -24,8 +24,8 @@ public:
 
 	float m;
 
-	float kc = 1e6;
-	float collisionThreshold = 0.1;
+	float kc;
+	float collisionThreshold;
 
 	bool operator==(const SolverParams& other) const {
 		return frameDt == other.frameDt && subSteps == other.subSteps && g == other.g && iterCount == other.iterCount && currMaterial == other.currMaterial && k == other.k && restLen == other.restLen && u == other.u && lambda == other.lambda && other.m == m && kc == other.kc && collisionThreshold == other.collisionThreshold;

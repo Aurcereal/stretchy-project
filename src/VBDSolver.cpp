@@ -6,7 +6,6 @@
 VBDSolver::VBDSolver(const vector<SolverParams>* params) : cachedParams(params), cachedPoses(), lastSimulatedFrame(0), constrainedVerts() {}
 
 bool IsTetMeshMaterial(PhysicsMaterialID mat) {
-	std::cerr << "checking material" << std::endl;
 	return mat == TET_SPRING || mat == TET_NEOHOOK;
 }
 
@@ -54,7 +53,6 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 	}
 
 	if (useTetMesh) {
-		std::cerr << "registering tet mesh" << std::endl;
 		cachedTetPoses[0] = mkU<TetMesh>();
 		cachedTetPoses[0]->FromHalfEdge(*cachedPoses[0]);
 		cachedTetPoses[0]->PreCompute();
@@ -64,8 +62,6 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 				constrainedVerts.insert(v->id);
 		}
 	}
-
-	std::cerr << "after new start pose" << std::endl;
 
 	if (enableCollisionMesh && collisionMeshSource != nullptr) {
 		collisionMesh = mkU<HalfEdgeMesh>(*collisionMeshSource);

@@ -67,7 +67,12 @@ static PRM_Name restLengthName("restLength", "RestLength");
 static PRM_Name areaChangeResistanceName("areaChangeResistance", "AreaChangeResistance");
 static PRM_Name shearResistanceName("shearResistanceName", "ShearResistanceName");
 
+static PRM_Name collisionThresholdName("collisionThreshold", "CollisionThreshold");
+static PRM_Name collisionCoefficientName("collisionCoefficient", "CollisionCoefficient");
+
 static PRM_Name constraintGroupNameName("constraintGroupName", "ConstraintGroupName");
+
+static PRM_Name gravityName("gravity", "Gravity");
 
 //
 static PRM_Default timeScaleDefault(1.0);
@@ -77,12 +82,21 @@ static PRM_Default iterationCountDefault(5);
 static PRM_Default physicsMaterialDefault(0);
 
 static PRM_Default springConstantDefault(150.0);
-static PRM_Default restLengthDefault(0.3);
+static PRM_Default restLengthDefault(1.0f);
 
 static PRM_Default areaChangeResistanceDefault(1.0);
 static PRM_Default shearResistanceDefault(1.0);
 
+static PRM_Default collisionThresholdDefault(0.1f);
+static PRM_Default collisionCoefficientDefault(1e6);
+
 static PRM_Default constraintGroupNameDefault(0, "ConstraintGroup");
+
+static PRM_Default gravityDefault[] = {
+    PRM_Default(0.0f),
+    PRM_Default(-0.98f),
+    PRM_Default(0.0f)
+};
 
 PRM_Template
 SOP_VBD::myTemplateList[] = {
@@ -94,7 +108,10 @@ SOP_VBD::myTemplateList[] = {
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &restLengthName, &restLengthDefault, 0),
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &areaChangeResistanceName, &areaChangeResistanceDefault, 0),
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &shearResistanceName, &shearResistanceDefault, 0),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &collisionThresholdName, &collisionThresholdDefault, 0),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &collisionCoefficientName, &collisionCoefficientDefault, 0),
    PRM_Template(PRM_STRING, PRM_Template::PRM_EXPORT_MIN, 1, &constraintGroupNameName, &constraintGroupNameDefault, 0),
+   PRM_Template(PRM_XYZ, PRM_Template::PRM_EXPORT_MIN, 3, &gravityName, gravityDefault, 0),
    PRM_Template()
 };
 
@@ -200,7 +217,11 @@ SolverParams SOP_VBD::GetParams(fpreal time) {
     params.frameDt = evalFloat(timeScaleName.getToken(), 0, time) / fps;
     params.subSteps = evalInt(subStepsName.getToken(), 0, time);
 
-    params.g = vec3(0.0f, -0.98f, 0.0f); // TODO: parametrize
+    params.g = vec3(
+        evalFloat(gravityName.getToken(), 0, time),
+        evalFloat(gravityName.getToken(), 1, time),
+        evalFloat(gravityName.getToken(), 2, time)
+    );
     params.iterCount = evalInt(iterationCountName.getToken(), 0, time);
     params.currMaterial = evalInt(physicsMaterialName.getToken(), 0, time);
 
@@ -212,6 +233,9 @@ SolverParams SOP_VBD::GetParams(fpreal time) {
 
     params.m = 1.0f; // TODO: parametrize
 
+    params.collisionThreshold = evalFloat(collisionThresholdName.getToken(), 0, time);
+    params.kc = evalFloat(collisionCoefficientName.getToken(), 0, time);
+
     return params;
 }
 
@@ -221,8 +245,6 @@ SOP_VBD::cookMySop(OP_Context &context)
     
 
 	fpreal currTime = context.getTime();
-
-    std::cerr << "Current Time: " << currTime << std::endl;
 
     UT_Interrupt* boss;
     myCurrPoint   = 0;			// Initialize the PT local variable
@@ -243,7 +265,7 @@ SOP_VBD::cookMySop(OP_Context &context)
     const GU_Detail* collisionMesh = inputGeo(1, context);
     int prevCollisionGeoDataID = collisionGeoDataID;
     collisionGeoDataID = collisionMesh ? collisionMesh->getP()->getDataId() : -1;
-    std::cerr << "Collision data: " << collisionGeoDataID << std::endl;
+    // std::cerr << "Collision data: " << collisionGeoDataID << std::endl;
 
     // Constraint Group
     int prevConstraintGroupID = constraintGroupID;
@@ -251,14 +273,13 @@ SOP_VBD::cookMySop(OP_Context &context)
     const GA_PointGroup* group = gdp->findPointGroup(groupNameStr);
     if (group == nullptr) {
         constraintGroupID = -1;
-        std::cerr << "Constraint Group \"" << groupNameStr << "\" doesn't exist!" << std::endl;
+        // std::cerr << "Constraint Group \"" << groupNameStr << "\" doesn't exist!" << std::endl;
     } else {
         constraintGroupID = group->getDataId();
-        std::cerr << "Constraint Group ID: " << constraintGroupID << std::endl;
+        // std::cerr << "Constraint Group ID: " << constraintGroupID << std::endl;
     }
 
     // Check for param changes
-    std::cerr << "Params changed?" << std::endl;
     bool paramsChanged = false;
     auto channelManager = OPgetDirector()->getChannelManager();
     int frameCount =
@@ -286,13 +307,12 @@ SOP_VBD::cookMySop(OP_Context &context)
     // Invalidate Solver Cache
     if (paramsChanged) {
         // CACHE INVALIDATION
-        std::cerr << "Params changed at " << context.getFrame() << std::endl;
+        // std::cerr << "Params changed at " << context.getFrame() << std::endl;
         vbdSolver.TruncateSimulation(context.getFrame());
         vbdSolver.SetDirty();
     }
 
     // Check should reset sim?
-    std::cerr << "Immediate reset?" << std::endl;
     if (
         prevConstraintGroupID != constraintGroupID || // group changed
         gdp->getP()->getDataId() != inputGeoDataID || // input geo changed
@@ -314,11 +334,10 @@ SOP_VBD::cookMySop(OP_Context &context)
         vbdSolver.ResetSimulation(std::move(inputMesh), collisionGeo ? std::move(collisionGeo) : nullptr);
     }
 
-    std::cerr << "Build sim frame" << std::endl;
 	// Start the interrupt server
 	if (boss->opStart("Building Sim Frame"))
 	{
-        std::cerr << "Frame " << context.getFrame() << std::endl;
+        // std::cerr << "Frame " << context.getFrame() << std::endl;
         vbdSolver.SimulateUpToFrame(context.getFrame());
         vbdSolver.GetMesh(context.getFrame())->LoadIntoExistingTopologicallySameHoudiniMesh(gdp);
 	}
