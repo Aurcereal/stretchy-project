@@ -6,7 +6,7 @@ bool IsConstrained(Vertex* vert) {
 	return abs(vert->pos.x) >= 0.97 && vert->pos.y > -0.01;//vert->pos.y > 0.75f;
 }
 
-VBDSolver::VBDSolver() : cachedPoses(), lastSimulatedFrame(0) {}
+VBDSolver::VBDSolver(const vector<SolverParams>* params) : cachedParams(params), cachedPoses(), lastSimulatedFrame(0) {}
 
 void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 	if (newStartPoseMesh == nullptr && cachedPoses.size() == 0) {
@@ -32,6 +32,19 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 
 	lastSimulatedFrame = 0;
 }
+
+void VBDSolver::TruncateSimulation(int lastValidFrame) {
+	if (lastSimulatedFrame <= lastValidFrame) {
+		return;
+	}
+	else {
+		cachedPoses.resize(lastValidFrame + 1);
+		lastSimulatedFrame = lastValidFrame;
+	}
+}
+void VBDSolver::SetDirty() {
+	dirty = true;
+}
 //void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 //	if (newStartPoseMesh != nullptr) {
 //		startPoseMesh = std::move(newStartPoseMesh);
@@ -50,10 +63,13 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 //}
 
 void VBDSolver::SimulateUpToFrame(uint frameIndex) {
-	if (lastSimulatedFrame > frameIndex) {
-		// Use the past cache
-		lastSimulatedFrame = frameIndex;
-		cachedPoses.resize(lastSimulatedFrame + 1);
+	if (dirty && frameIndex == 1) {
+		dirty = false;
+		ResetSimulation();
+	}
+
+	if (frameIndex < lastSimulatedFrame) {
+		return;
 	} else {
 		// Need to simulate more
 		int numUpdates = frameIndex - lastSimulatedFrame;
@@ -66,8 +82,8 @@ void VBDSolver::SimulateUpToFrame(uint frameIndex) {
 vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 	if (vert->constrained) return vert->pos; // TODO need newest changes with map
 
-	vec3 inertiaForce = -m / (stepDt() * stepDt()) * (vert->pos - externalPos);
-	mat3 inertiaHessian = m / (stepDt() * stepDt()) * glm::identity<mat3>();
+	vec3 inertiaForce = -P().m / (stepDt() * stepDt()) * (vert->pos - externalPos);
+	mat3 inertiaHessian = P().m / (stepDt() * stepDt()) * glm::identity<mat3>();
 
 	vec3 neighborForce = vec3(0);
 	mat3 neighborHessian = mat3(0);
@@ -81,8 +97,8 @@ vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 		vec3 dNormalized = normalize(d);
 		mat3 dNormalizedOuterProd = glm::outerProduct(dNormalized, dNormalized);
 
-		neighborForce += -k * (l - restLen) * dNormalized;
-		neighborHessian += k * (dNormalizedOuterProd + (1.0f / l) * (l - restLen) * (glm::identity<mat3>() - dNormalizedOuterProd));
+		neighborForce += -P().k * (l - P().restLen) * dNormalized;
+		neighborHessian += P().k * (dNormalizedOuterProd + (1.0f / l) * (l - P().restLen) * (glm::identity<mat3>() - dNormalizedOuterProd));
 
 		currEdge = currEdge->next->sym;
 	} while (currEdge != vert->incomingEdge);
@@ -97,8 +113,8 @@ vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 vec3 VBDSolver::PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos) {
 	if (vert->constrained) return vert->pos;
 
-	vec3 inertiaForce = -m / (stepDt() * stepDt()) * (vert->pos - externalPos);
-	mat3 inertiaHessian = m / (stepDt() * stepDt()) * glm::identity<mat3>();
+	vec3 inertiaForce = -P().m / (stepDt() * stepDt()) * (vert->pos - externalPos);
+	mat3 inertiaHessian = P().m / (stepDt() * stepDt()) * glm::identity<mat3>();
 
 	vec3 neighborForce = vec3(0);
 	mat3 neighborHessian = mat3(0);
@@ -205,7 +221,7 @@ mat3 VBDSolver::ComputeHessian(const HalfEdgeMesh& mesh, Face* face, Vertex* v) 
 		mat2x2 strain = 0.5f * (transpose(deformationMat) * deformationMat - glm::identity<mat2x2>());
 		mat2x2 dStrain = 0.5f * (transpose(dDeformationMat) * deformationMat + transpose(deformationMat) * dDeformationMat);
 
-		mat2x3 dStress = dDeformationMat * (2 * u * strain + lambda * trace(strain) * glm::identity<mat2x2>()) + deformationMat * (2 * u * dStrain + lambda * trace(dStrain) * glm::identity<mat2x2>());
+		mat2x3 dStress = dDeformationMat * (2 * P().u * strain + P().lambda * trace(strain) * glm::identity<mat2x2>()) + deformationMat * (2 * P().u * dStrain + P().lambda * trace(dStrain) * glm::identity<mat2x2>());
 		vec3 df = -fInfo.restArea * dStress * g;
 
 		hessian[i] = df;
@@ -247,7 +263,7 @@ vec3 VBDSolver::ComputeForce(const HalfEdgeMesh& mesh, Face* face, Vertex* v) {
 
 	mat2x2 strain = 0.5f * (transpose(deformationMat) * deformationMat - glm::identity<mat2x2>());
 
-	mat2x3 stress = deformationMat * (2 * u * strain + lambda * trace(strain) * glm::identity<mat2x2>());
+	mat2x3 stress = deformationMat * (2 * P().u * strain + P().lambda * trace(strain) * glm::identity<mat2x2>());
 	vec3 f = -fInfo.restArea * stress * g;
 
 	return f;
@@ -260,18 +276,19 @@ void VBDSolver::SimulateOneFrame() {
 	}
 
 	uPtr<HalfEdgeMesh> simulatingMesh = mkU<HalfEdgeMesh>(*cachedPoses[lastSimulatedFrame]);
+	simulatingFrame = lastSimulatedFrame + 1;
 
-	for (int i = 0; i < subSteps; i++) {
+	for (int i = 0; i < P().subSteps; i++) {
 		// Predict external positions & save positions
 		vector<vec3> oldPositions(simulatingMesh->vertices.size());
 		vector<vec3> externalPredictedPositions(simulatingMesh->vertices.size());
 		for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
-			vec3 externalAcc = g;
+			vec3 externalAcc = P().g;
 			oldPositions[i] = simulatingMesh->vertices[i]->pos;
 			externalPredictedPositions[i] = simulatingMesh->vertices[i]->pos + simulatingMesh->vertices[i]->vel * stepDt() + externalAcc * stepDt() * stepDt();
 		}
 
-		for (int i = 0; i < iterCount; i++) {
+		for (int i = 0; i < P().iterCount; i++) {
 			for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
 				Vertex* v = simulatingMesh->vertices[i].get();
 

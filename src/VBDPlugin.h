@@ -55,30 +55,12 @@ protected:
 				 }
 
 private:
-    /// The following list of accessors simplify evaluating the parameters
-    /// of the SOP.
+    SolverParams GetParams(fpreal time);
+    vector<SolverParams> cachedParams;
 
-    // PUT YOUR CODE HERE
-	// Here you need to declare functions which need to be called from the .C file to 
-	// constantly update the cook function, these functions help you get the current value that the node has
-	// Example : To declare a function to fetch angle you need to do it this way 
-    // The getting parameter functions take in time because of keyframes prolly
-    fpreal  ANGLE(fpreal t) { return evalFloat("angle", 0, t); }
-    fpreal  STEP_SIZE(fpreal t) { return evalFloat("stepSize", 0, t); }
-    int  ITERATIONS(fpreal t) { return evalInt("iterations", 0, t); }
-    void  FILE_PATH(fpreal t, UT_String& filePath) { evalString(filePath, "grammarFilePath", 0, t); }
-
-    // int convertMeshToAdjacency(OP_Context& context, int inputIndex);
-
-    //
-    VBDSolver vbdSolver;
+    VBDSolver vbdSolver = VBDSolver(&cachedParams);
     GA_DataId inputGeoDataID = -1;
-
-
-
-
-
-
+    GA_DataId constraintGroupID = -1;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
