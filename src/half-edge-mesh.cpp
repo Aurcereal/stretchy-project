@@ -6,6 +6,12 @@
 #include <GU/GU_Detail.h>
 #include <GU/GU_PrimPoly.h>
 
+size_t VertexPairID(Vertex* a, Vertex* b) {
+    size_t lo = std::min(a->id, b->id);
+    size_t hi = std::max(a->id, b->id);
+    return lo * 2654435761ull ^ hi; // Knuth multiplicative hash
+}
+
 void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo, const GA_PointGroup* constraintGroup) {
     pointCountBound = geo->getNumPointOffsets();
     std::vector<std::unordered_set<GA_Offset>> adjList(pointCountBound);
@@ -132,6 +138,39 @@ HalfEdgeMesh::HalfEdgeMesh(const HalfEdgeMesh& other) {
 
 HalfEdgeMesh::HalfEdgeMesh() : pointCountBound() {}
 
+void HalfEdgeMesh::ComputeRestLengths() {
+    restLengths.clear();
+    for (const uPtr<HalfEdge>& h : halfEdges) {
+        Vertex* v0 = h->next->nextVertex;
+        Vertex* v1 = h->nextVertex;
+        int id = VertexPairID(v0, v1);
+        if (restLengths.count(id) == 0) {
+            restLengths[id] = length(v0->pos - v1->pos);
+        }
+    }
+}
+
+float HalfEdgeMesh::GetRestLength(Vertex* a, Vertex* b) {
+    return length(a->pos - b->pos);// restLengths.at(VertexPairID(a, b));
+}
+
+
+void HalfEdgeMesh::Translate(vec3 offset) {
+    for (auto& v : vertices) {
+        v->pos += offset;
+    }
+}
+void HalfEdgeMesh::Scale(vec3 scale) {
+    for (auto& v : vertices) {
+        vec3 pos = v->pos;
+        pos.x *= scale.x;
+        pos.y *= scale.y;
+        pos.z *= scale.z;
+        v->pos = pos;
+    }
+}
+
+
 void HalfEdgeMesh::TriangulateAllFaces() {
     int initialFaceCount = faces.size();
     for (int i = 0; i < initialFaceCount; ++i) {
@@ -217,4 +256,31 @@ void TriangulateConvexFace(Face* f, vector<vec3>* positions, vector<vec3>* color
         indices->push_back(positions->size() - sideCount + i + 2);
     }
 
+}
+
+void HalfEdgeMesh::TriangleMeshToVertexIndices(vector<vec3>* vertices, vector<vec3>* normals, vector<uint32_t>* indices) {
+    for (const uPtr<Face>& f : faces) {
+        vec3 faceNormal = normalize(cross(
+            f->edge->next->nextVertex->pos - f->edge->nextVertex->pos,
+            f->edge->next->next->nextVertex->pos - f->edge->nextVertex->pos));
+
+        HalfEdge* const startEdge = f->edge;
+        if (startEdge->next->next->next != startEdge) {
+            vertices->clear();
+            normals->clear();
+            indices->clear();
+            assert(false);
+            return;
+        }
+
+        HalfEdge* currEdge = startEdge;
+        do {
+            Vertex* v = currEdge->nextVertex;
+            vertices->push_back(v->pos);
+            normals->push_back(faceNormal);
+            indices->push_back(vertices->size() - 1); // 0, 1, 2...
+
+            currEdge = currEdge->next;
+        } while (currEdge != startEdge);
+    }
 }

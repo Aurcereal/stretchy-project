@@ -8,7 +8,7 @@ bool IsConstrained(Vertex* vert) {
 
 VBDSolver::VBDSolver(const vector<SolverParams>* params) : cachedParams(params), cachedPoses(), lastSimulatedFrame(0) {}
 
-void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
+void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEdgeMesh> collisionMeshSource) {
 	if (newStartPoseMesh == nullptr && cachedPoses.size() == 0) {
 		std::cerr << "ERROR: ResetSimulation called without new start pose mesh when we don't have one!" << std::endl;
 		return;
@@ -22,12 +22,20 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh) {
 
 		cachedPoses[0] = mkU<HalfEdgeMesh>(*newStartPoseMesh);
 		cachedPoses[0]->TriangulateAllFaces();
+		cachedPoses[0]->ComputeRestLengths();
 		ComputeFaceInfo();
+		
 
 		for (const uPtr<Vertex>& v : cachedPoses[0]->vertices) {
 			if (IsConstrained(v.get()))
 				constrainedVerts.insert(v->id);
 		}
+	}
+
+	if (collisionMeshSource != nullptr) {
+		collisionMesh = mkU<HalfEdgeMesh>(*collisionMeshSource);
+		collisionMesh->TriangulateAllFaces();
+		enableCollisionMesh = true;
 	}
 
 	lastSimulatedFrame = 0;
@@ -62,6 +70,46 @@ void VBDSolver::SetDirty() {
 //	ComputeFaceInfo();
 //}
 
+
+void VBDSolver::ComputePlaneCollision(vec3 planeNormal, vec3 planePoint, Vertex* vert, vec3& collisionForce, mat3& collisionHessian) {
+	float d = fmax(0.0f, dot(planePoint - vert->pos, planeNormal));
+	if (d > 0.0f) {
+
+		// calculate force and hessian
+		vec3 floorCollisionForce = P().kc * d * planeNormal;
+		mat3 floorCollisionHessian = P().kc * glm::outerProduct(planeNormal, planeNormal);
+
+		// output
+		collisionForce += floorCollisionForce;
+		collisionHessian += floorCollisionHessian;
+
+	}
+}
+
+void VBDSolver::ComputeTriangleCollision(Vertex* vert, Vertex* a, Vertex* b, Vertex* c, vec3& collisionForce, mat3& collisionHessian) {
+	if (vert == a || vert == b || vert == c) return;
+
+	vec3 normal = normalize(cross(b->pos - a->pos, c->pos - a->pos));
+	float d = dot(vert->pos - a->pos, normal);
+
+	if (d > -P().collisionThreshold && d < 0.0f) {
+		vec3 proj = vert->pos - d * normal;
+
+		vec3 ab = b->pos - a->pos, ac = c->pos - a->pos, ap = proj - a->pos;
+		float d00 = dot(ab, ab), d01 = dot(ab, ac), d11 = dot(ac, ac);
+		float d20 = dot(ap, ab), d21 = dot(ap, ac);
+		float denom = d00 * d11 - d01 * d01;
+		float v = (d11 * d20 - d01 * d21) / denom;
+		float w = (d00 * d21 - d01 * d20) / denom;
+		float u = 1.0f - v - w;
+
+		if (u < 0.f || v < 0.f || w < 0.f) return;
+
+		collisionForce += P().kc * (-d) * normal;
+		collisionHessian += P().kc * outerProduct(normal, normal);
+	}
+}
+
 void VBDSolver::SimulateUpToFrame(uint frameIndex) {
 	if (dirty && frameIndex == 1) {
 		dirty = false;
@@ -80,13 +128,29 @@ void VBDSolver::SimulateUpToFrame(uint frameIndex) {
 }
 
 vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
-	if (vert->constrained) return vert->pos; // TODO need newest changes with map
+	if (constrainedVerts.count(vert->id) != 0) return vert->pos;
 
 	vec3 inertiaForce = -P().m / (stepDt() * stepDt()) * (vert->pos - externalPos);
 	mat3 inertiaHessian = P().m / (stepDt() * stepDt()) * glm::identity<mat3>();
 
 	vec3 neighborForce = vec3(0);
 	mat3 neighborHessian = mat3(0);
+
+	vec3 collisionForce = vec3(0);
+	mat3 collisionHessian = mat3(0);
+
+	ComputePlaneCollision(vec3(0, 1, 0), vec3(0, -3, 0), vert, collisionForce, collisionHessian);
+
+	// collision against mesh triangles
+	if (enableCollisionMesh && collisionMesh != nullptr) {
+		for (const uPtr<Face>& f : collisionMesh->faces) {
+			// Rightnow: assuming mesh is triangle only
+			Vertex* a = f->edge->nextVertex;
+			Vertex* b = f->edge->next->nextVertex;
+			Vertex* c = f->edge->next->next->nextVertex;
+			ComputeTriangleCollision(vert, a, b, c, collisionForce, collisionHessian);
+		}
+	}
 
 	HalfEdge* currEdge = vert->incomingEdge;
 	do {
@@ -97,14 +161,25 @@ vec3 VBDSolver::PredictPosition(Vertex* vert, vec3 externalPos) {
 		vec3 dNormalized = normalize(d);
 		mat3 dNormalizedOuterProd = glm::outerProduct(dNormalized, dNormalized);
 
-		neighborForce += -P().k * (l - P().restLen) * dNormalized;
-		neighborHessian += P().k * (dNormalizedOuterProd + (1.0f / l) * (l - P().restLen) * (glm::identity<mat3>() - dNormalizedOuterProd));
+		float edgeRestLength = cachedPoses[0]->GetRestLength(vert, neighborVert) * P().restLen;
+
+		neighborForce += -P().k * (l - edgeRestLength) * dNormalized;
+		neighborHessian += P().k * (dNormalizedOuterProd + (1.0f / l) * (l - edgeRestLength) * (glm::identity<mat3>() - dNormalizedOuterProd));
 
 		currEdge = currEdge->next->sym;
 	} while (currEdge != vert->incomingEdge);
 
-	vec3 force = inertiaForce + neighborForce;
-	mat3 hessian = inertiaHessian + neighborHessian;
+	//inertiaForce = vec3(0);
+	//inertiaHessian = mat3(0);
+
+	//neighborForce = vec3(0);
+	//neighborHessian = mat3(0);
+
+	//collisionForce = vec3(0);
+	//collisionHessian = mat3(0);
+
+	vec3 force = inertiaForce + neighborForce + collisionForce;
+	mat3 hessian = inertiaHessian + neighborHessian + collisionHessian;
 
 	vec3 deltaX = glm::inverse(hessian) * force;
 	return vert->pos + deltaX;
@@ -278,7 +353,7 @@ void VBDSolver::SimulateOneFrame() {
 	uPtr<HalfEdgeMesh> simulatingMesh = mkU<HalfEdgeMesh>(*cachedPoses[lastSimulatedFrame]);
 	simulatingFrame = lastSimulatedFrame + 1;
 
-	for (int i = 0; i < P().subSteps; i++) {
+	for (int s = 0; s < P().subSteps; s++) {
 		// Predict external positions & save positions
 		vector<vec3> oldPositions(simulatingMesh->vertices.size());
 		vector<vec3> externalPredictedPositions(simulatingMesh->vertices.size());
@@ -288,7 +363,7 @@ void VBDSolver::SimulateOneFrame() {
 			externalPredictedPositions[i] = simulatingMesh->vertices[i]->pos + simulatingMesh->vertices[i]->vel * stepDt() + externalAcc * stepDt() * stepDt();
 		}
 
-		for (int i = 0; i < P().iterCount; i++) {
+		for (int j = 0; j < P().iterCount; j++) {
 			for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
 				Vertex* v = simulatingMesh->vertices[i].get();
 
@@ -307,7 +382,7 @@ void VBDSolver::SimulateOneFrame() {
 		for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
 			Vertex* v = simulatingMesh->vertices[i].get();
 			v->vel = (1.0f / stepDt()) * (v->pos - oldPositions[i]);
-			v->pos = oldPositions[i] + 0.98f * v->vel * stepDt(); // DAMPING
+			v->vel *= 0.98f; // DAMPING
 		}
 	}
 

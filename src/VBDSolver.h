@@ -5,6 +5,8 @@
 #include <iostream>
 #include <unordered_set>
 
+
+
 struct SolverParams {
 public:
 	float frameDt;
@@ -22,8 +24,11 @@ public:
 
 	float m;
 
+	float kc = 1e6;
+	float collisionThreshold = 0.1;
+
 	bool operator==(const SolverParams& other) const {
-		return frameDt == other.frameDt && subSteps == other.subSteps && g == other.g && iterCount == other.iterCount && currMaterial == other.currMaterial && k == other.k && restLen == other.restLen && u == other.u && lambda == other.lambda && other.m == m;
+		return frameDt == other.frameDt && subSteps == other.subSteps && g == other.g && iterCount == other.iterCount && currMaterial == other.currMaterial && k == other.k && restLen == other.restLen && u == other.u && lambda == other.lambda && other.m == m && kc == other.kc && collisionThreshold == other.collisionThreshold;
 			//&& (other.constraintGroupName == constraintGroupName || (other.constraintGroupName != nullptr && constraintGroupName != nullptr && strcmp(constraintGroupName, other.constraintGroupName) == 0));
 	}
 };
@@ -42,7 +47,7 @@ class VBDSolver {
 public:
 	VBDSolver(const vector<SolverParams>* params);
 
-	void ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh = nullptr);
+	void ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh = nullptr, uPtr<HalfEdgeMesh> collisionMeshSource = nullptr);
 	void SimulateUpToFrame(uint frameIndex);
 	inline HalfEdgeMesh* GetMesh(uint frameIndex) {
 		if (frameIndex >= cachedPoses.size())
@@ -85,6 +90,11 @@ private:
 	void SimulateOneFrame();
 	vec3 PredictPosition(Vertex* vert, vec3 externalPos);
 	vec3 PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos);
+
+	void ComputePlaneCollision(vec3 planeNormal, vec3 planePoint, Vertex* vert, vec3& collisionForce, mat3& collisionHessian);
+	void ComputeTriangleCollision(Vertex* vert, Vertex* a, Vertex* b, Vertex* c, vec3& collisionForce, mat3& collisionHessian);
+	uPtr<HalfEdgeMesh> collisionMesh = nullptr;
+	bool enableCollisionMesh = false;
 
 	// For StVK Cloth, different ComputeHessian/ComputeForce functions can be written for different materials, but the 'element' changes too often to generalize (simple spring uses vert, cloth stvk uses triangle, later materials will use tetrahedrons)
 	void ComputeFaceInfo();

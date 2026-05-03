@@ -61,6 +61,7 @@ private:
     VBDSolver vbdSolver = VBDSolver(&cachedParams);
     GA_DataId inputGeoDataID = -1;
     GA_DataId constraintGroupID = -1;
+    GA_DataId collisionGeoDataID = -1;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 

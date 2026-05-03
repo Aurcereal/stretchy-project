@@ -50,9 +50,20 @@ public:
     HalfEdgeMesh(const HalfEdgeMesh&);
     HalfEdgeMesh();
 
+    int GetVertexCount() const { return vertices.size(); }
+    int GetFaceCount() const { return faces.size(); }
+
+    void Translate(vec3 offset);
+    void Scale(vec3 scale);
+
+    float GetRestLength(Vertex* a, Vertex* b);
+
     void TriangulateAllFaces();
 private:
     friend class VBDSolver;
+
+    unordered_map<int, float> restLengths;
+    void ComputeRestLengths();
     
     uint pointCountBound;
     vector<uPtr<Vertex>> vertices;
@@ -97,6 +108,8 @@ private:
     }
 
     //
+    void TriangleMeshToVertexIndices(vector<vec3>* vertices, vector<vec3>* normals, vector<uint32_t>* indices);
+
     void TriangulateFace(Face* face);
 };
 
