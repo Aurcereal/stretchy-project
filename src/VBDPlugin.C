@@ -286,7 +286,7 @@ SOP_VBD::cookMySop(OP_Context &context)
         channelManager->getSample(channelManager->getGlobalEnd()) -
         channelManager->getSample(channelManager->getGlobalStart()) + 1;
     if (cachedParams.size() != frameCount) {
-        std::cerr << "Was size " << cachedParams.size() << " but frame count is " << frameCount << std::endl;
+        // std::cerr << "Was size " << cachedParams.size() << " but frame count is " << frameCount << std::endl;
         paramsChanged = true;
         cachedParams.resize(frameCount);
     }

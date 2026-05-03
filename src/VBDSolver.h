@@ -94,7 +94,7 @@ private:
 	void ComputeTriangleCollision(Vertex* vert, Vertex* a, Vertex* b, Vertex* c, vec3& collisionForce, mat3& collisionHessian);
 	uPtr<HalfEdgeMesh> collisionMesh = nullptr;
 	bool enableCollisionMesh = false;
-	bool enableCollisionPlane = true;
+	bool enableCollisionPlane = false;
 
 	// For StVK Cloth, different ComputeHessian/ComputeForce functions can be written for different materials, but the 'element' changes too often to generalize (simple spring uses vert, cloth stvk uses triangle, later materials will use tetrahedrons)
 	void ComputeClothFaceInfo();

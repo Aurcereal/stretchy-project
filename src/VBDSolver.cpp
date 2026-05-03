@@ -63,9 +63,10 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 		}
 	}
 
-	if (enableCollisionMesh && collisionMeshSource != nullptr) {
+	if (collisionMeshSource != nullptr) {
 		collisionMesh = mkU<HalfEdgeMesh>(*collisionMeshSource);
 		collisionMesh->TriangulateAllFaces();
+		enableCollisionMesh = true;
 	}
 
 	lastSimulatedFrame = 0;
@@ -134,7 +135,7 @@ void VBDSolver::ComputePlaneCollision(vec3 planeNormal, vec3 planePoint, Vertex*
 void VBDSolver::ComputeTriangleCollision(Vertex* vert, Vertex* a, Vertex* b, Vertex* c, vec3& collisionForce, mat3& collisionHessian) {
 	if (vert == a || vert == b || vert == c) return;
 
-	vec3 normal = normalize(cross(b->pos - a->pos, c->pos - a->pos));
+	vec3 normal = normalize(cross(c->pos - a->pos, b->pos - a->pos));
 	float d = dot(vert->pos - a->pos, normal);
 
 	if (d > -P().collisionThreshold && d < 0.0f) {
