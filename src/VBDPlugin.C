@@ -243,6 +243,7 @@ SOP_VBD::cookMySop(OP_Context &context)
     const GU_Detail* collisionMesh = inputGeo(1, context);
     int prevCollisionGeoDataID = collisionGeoDataID;
     collisionGeoDataID = collisionMesh ? collisionMesh->getP()->getDataId() : -1;
+    std::cerr << "Collision data: " << collisionGeoDataID << std::endl;
 
     // Constraint Group
     int prevConstraintGroupID = constraintGroupID;
@@ -256,27 +257,8 @@ SOP_VBD::cookMySop(OP_Context &context)
         std::cerr << "Constraint Group ID: " << constraintGroupID << std::endl;
     }
 
-    // Need an IMMEDIATE RESET
-    if (
-        prevConstraintGroupID != constraintGroupID || // group changed
-        gdp->getP()->getDataId() != inputGeoDataID || // input geo changed
-        collisionGeoDataID != prevCollisionGeoDataID // input collision changed
-        ) {
-        inputGeoDataID = gdp->getP()->getDataId();
-
-        uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();        
-        inputMesh->CreateFromGUDetail(gdp, group);
-
-        uPtr<HalfEdgeMesh> collisionGeo = nullptr;
-        if (collisionGeoDataID != -1) {
-            collisionGeo = mkU<HalfEdgeMesh>();
-            collisionGeo->CreateFromGUDetail(collisionMesh, nullptr);
-        }
-
-        vbdSolver.ResetSimulation(std::move(inputMesh), collisionGeo ? std::move(collisionGeo) : nullptr);
-    }
-
-    // Parameters & Checking for Changes, a CACHE INVALIDATION
+    // Check for param changes
+    std::cerr << "Params changed?" << std::endl;
     bool paramsChanged = false;
     auto channelManager = OPgetDirector()->getChannelManager();
     int frameCount =
@@ -298,7 +280,10 @@ SOP_VBD::cookMySop(OP_Context &context)
             paramsChanged = true;
         }
         cachedParams[i] = newParam;
+        // std::cerr << "putting param at " << i << " with mat " << cachedParams[i].currMaterial << std::endl;
     }
+
+    // Invalidate Solver Cache
     if (paramsChanged) {
         // CACHE INVALIDATION
         std::cerr << "Params changed at " << context.getFrame() << std::endl;
@@ -306,6 +291,30 @@ SOP_VBD::cookMySop(OP_Context &context)
         vbdSolver.SetDirty();
     }
 
+    // Check should reset sim?
+    std::cerr << "Immediate reset?" << std::endl;
+    if (
+        prevConstraintGroupID != constraintGroupID || // group changed
+        gdp->getP()->getDataId() != inputGeoDataID || // input geo changed
+        collisionGeoDataID != prevCollisionGeoDataID // input collision changed
+        ) {
+        inputGeoDataID = gdp->getP()->getDataId();
+
+        std::cerr << "Convert input mesh" << std::endl;
+        uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();        
+        inputMesh->CreateFromGUDetail(gdp, group);
+
+        uPtr<HalfEdgeMesh> collisionGeo = nullptr;
+        if (collisionGeoDataID != -1) {
+            collisionGeo = mkU<HalfEdgeMesh>();
+            collisionGeo->CreateFromGUDetail(collisionMesh, nullptr);
+        }
+
+        std::cerr << "Time to reset sim" << std::endl;
+        vbdSolver.ResetSimulation(std::move(inputMesh), collisionGeo ? std::move(collisionGeo) : nullptr);
+    }
+
+    std::cerr << "Build sim frame" << std::endl;
 	// Start the interrupt server
 	if (boss->opStart("Building Sim Frame"))
 	{

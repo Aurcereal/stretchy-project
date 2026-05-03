@@ -6,12 +6,6 @@
 #include <GU/GU_Detail.h>
 #include <GU/GU_PrimPoly.h>
 
-size_t VertexPairID(Vertex* a, Vertex* b) {
-    size_t lo = std::min(a->id, b->id);
-    size_t hi = std::max(a->id, b->id);
-    return lo * 2654435761ull ^ hi; // Knuth multiplicative hash
-}
-
 void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo, const GA_PointGroup* constraintGroup) {
     pointCountBound = geo->getNumPointOffsets();
     std::vector<std::unordered_set<GA_Offset>> adjList(pointCountBound);
@@ -151,9 +145,8 @@ void HalfEdgeMesh::ComputeRestLengths() {
 }
 
 float HalfEdgeMesh::GetRestLength(Vertex* a, Vertex* b) {
-    return length(a->pos - b->pos);// restLengths.at(VertexPairID(a, b));
+    return restLengths.at(VertexPairID(a, b));
 }
-
 
 void HalfEdgeMesh::Translate(vec3 offset) {
     for (auto& v : vertices) {
@@ -283,4 +276,10 @@ void HalfEdgeMesh::TriangleMeshToVertexIndices(vector<vec3>* vertices, vector<ve
             currEdge = currEdge->next;
         } while (currEdge != startEdge);
     }
+}
+
+int VertexPairID(Vertex* a, Vertex* b) {
+    int lo = std::min(a->id, b->id);
+    int hi = std::max(a->id, b->id);
+    return lo * 100000 + hi;
 }

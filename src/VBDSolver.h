@@ -4,7 +4,7 @@
 #include "half-edge-mesh.h"
 #include <iostream>
 #include <unordered_set>
-
+#include "tet-mesh.h"
 
 
 struct SolverParams {
@@ -36,6 +36,8 @@ public:
 typedef int PhysicsMaterialID;
 #define SIMPLE_SPRING 0
 #define STVK_CLOTH 1
+#define TET_SPRING 2
+#define TET_NEOHOOK 3
 
 struct FaceInfo {
 	float restArea;
@@ -64,42 +66,46 @@ public:
 	inline float stepDt() {
 		return P().frameDt / (1.0f * P().subSteps);
 	}
-	//uint subSteps = 1;
-	//vec3 g = vec3(0.0f, -0.98f, 0.0f);
-	//float m = 1.0f;
-
-	//// For Simple Spring Only
-	//float k = 150.0f;
-	//float restLen = 0.3;
-
-	//// For StVK Cloth Only
-	//float u = 1.0f;
-	//float lambda = 1.0f;
-
-	//
-	PhysicsMaterialID currMaterial = SIMPLE_SPRING;
 private:
+	bool useTetMesh = false;
+
 	int simulatingFrame;
 	const vector<SolverParams>* cachedParams;
 	inline const SolverParams& P() { return (*cachedParams)[simulatingFrame]; }
 
 	bool dirty = false;
 	vector<uPtr<HalfEdgeMesh>> cachedPoses;
+	vector<uPtr<TetMesh>> cachedTetPoses;
 	int lastSimulatedFrame;
 
+	void ComputeCollisionForceAndHessian(Vertex* vert, vec3& collisionForce, mat3& collisionHessian);
+
 	void SimulateOneFrame();
+	void SimulateOneFrameTri();
+	void SimulateOneFrameTet();
 	vec3 PredictPosition(Vertex* vert, vec3 externalPos);
 	vec3 PredictPositionCloth(const HalfEdgeMesh& mesh, Vertex* vert, vec3 externalPos);
-
+	vec3 PredictPositionTetSpring(TetMesh&, Vertex* vert, vec3 externalPos);
+	vec3 PredictPositionTetNeoHook(TetMesh&, Vertex* vert, vec3 externalPos);
+	
+	float planeHeight = -2.0f;
+	float planeTilt = 0.0f; // angle in degrees
 	void ComputePlaneCollision(vec3 planeNormal, vec3 planePoint, Vertex* vert, vec3& collisionForce, mat3& collisionHessian);
 	void ComputeTriangleCollision(Vertex* vert, Vertex* a, Vertex* b, Vertex* c, vec3& collisionForce, mat3& collisionHessian);
 	uPtr<HalfEdgeMesh> collisionMesh = nullptr;
 	bool enableCollisionMesh = false;
+	bool enableCollisionPlane = true;
 
 	// For StVK Cloth, different ComputeHessian/ComputeForce functions can be written for different materials, but the 'element' changes too often to generalize (simple spring uses vert, cloth stvk uses triangle, later materials will use tetrahedrons)
-	void ComputeFaceInfo();
-	mat3 ComputeHessian(const HalfEdgeMesh& mesh, Face* face, Vertex*);
-	vec3 ComputeForce(const HalfEdgeMesh& mesh, Face* face, Vertex* v);
+	void ComputeClothFaceInfo();
+	mat3 ComputeClothNeighborHessian(const HalfEdgeMesh& mesh, Face* face, Vertex*);
+	vec3 ComputeClothNeighborForce(const HalfEdgeMesh& mesh, Face* face, Vertex* v);
+
+	// For NeoHookean
+	void ComputeNeoHookForceAndHessian(Vertex* vert, Tet* tet, vec3& force, mat3& hessian);
+
+	//
+	void ComputeInertiaForceAndHessian(vec3 vertPos, vec3 externalPos, vec3& inertiaForce, mat3& inertiaHessian);
 
 	std::unordered_map<int, FaceInfo> facesInfo;
 	std::unordered_set<int> constrainedVerts;

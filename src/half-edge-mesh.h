@@ -23,6 +23,7 @@ struct Vertex {
     vec3 vel;
 
     bool constrained;
+    bool isSurface = true;
 };
 
 struct HalfEdge {
@@ -60,7 +61,7 @@ public:
 
     void TriangulateAllFaces();
 private:
-    friend class VBDSolver;
+    friend class VBDSolver; friend class TetMesh;
 
     unordered_map<int, float> restLengths;
     void ComputeRestLengths();
@@ -115,3 +116,4 @@ private:
 
 void TriangulateConvexFace(Face* f, vector<vec3>* positions, vector<vec3>* colors, vector<vec3>* normals, vector<uint32_t>* indices);
 
+int VertexPairID(Vertex* a, Vertex* b);
