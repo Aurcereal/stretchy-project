@@ -26,6 +26,7 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 	cachedTetPoses.resize(1);
 
 	useTetMesh = IsTetMeshMaterial(P().currMaterial);
+	simulatingMaterial = P().currMaterial;
 	if (!useTetMesh)
 		cachedTetPoses.clear();
 
@@ -37,19 +38,19 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 		cachedPoses[0]->TriangulateAllFaces();
 
 		if (!useTetMesh) {
-			if (P().currMaterial == SIMPLE_SPRING) {
-				cachedPoses[0]->ComputeRestLengths();
-			}
-
-			if (P().currMaterial == STVK_CLOTH) {
-				ComputeClothFaceInfo();
-			}
-
 			for (const uPtr<Vertex>& v : cachedPoses[0]->vertices) {
 				if (v->constrained)
 					constrainedVerts.insert(v->id);
 			}
 		}
+	}
+
+	if (P().currMaterial == SIMPLE_SPRING) {
+		cachedPoses[0]->ComputeRestLengths();
+	}
+
+	if (P().currMaterial == STVK_CLOTH) {
+		ComputeClothFaceInfo();
 	}
 
 	if (useTetMesh) {
@@ -63,10 +64,10 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 		}
 	}
 
+	enableCollisionMesh = collisionMeshSource != nullptr;
 	if (collisionMeshSource != nullptr) {
 		collisionMesh = mkU<HalfEdgeMesh>(*collisionMeshSource);
 		collisionMesh->TriangulateAllFaces();
-		enableCollisionMesh = true;
 	}
 
 	lastSimulatedFrame = 0;
@@ -81,7 +82,7 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 
 void VBDSolver::SimulateUpToFrame(uint frameIndex) {
 	if (
-		useTetMesh != IsTetMeshMaterial(P().currMaterial) || // Changed btwn tet and non-tet
+		simulatingMaterial != P().currMaterial || // Changed btwn tet and non-tet
 		(dirty && frameIndex == 1)
 		) {
 		dirty = false;
@@ -176,12 +177,12 @@ void VBDSolver::ComputeCollisionForceAndHessian(Vertex* vert, vec3& collisionFor
 		}
 
 		// self intersection (DISABLED ATM)
-		//for (const uPtr<Face>& f : lastSimulatedMesh->faces) {
-		//	Vertex* a = f->edge->nextVertex;
-		//	Vertex* b = f->edge->next->nextVertex;
-		//	Vertex* c = f->edge->next->next->nextVertex;
-		//	ComputeTriangleCollision(vert, a, b, c, collisionForce, collisionHessian);
-		//}
+		for (const uPtr<Face>& f : cachedPoses[lastSimulatedFrame]->faces) {
+			Vertex* a = f->edge->nextVertex;
+			Vertex* b = f->edge->next->nextVertex;
+			Vertex* c = f->edge->next->next->nextVertex;
+			if(vert->id != a->id && vert->id != b->id && vert->id != c->id) ComputeTriangleCollision(vert, a, b, c, collisionForce, collisionHessian);
+		}
 
 	}
 

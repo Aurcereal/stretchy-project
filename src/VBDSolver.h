@@ -68,6 +68,7 @@ public:
 	}
 private:
 	bool useTetMesh = false;
+	PhysicsMaterialID simulatingMaterial;
 
 	int simulatingFrame;
 	const vector<SolverParams>* cachedParams;
