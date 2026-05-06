@@ -26,9 +26,12 @@ public:
 
 	float kc;
 	float collisionThreshold;
+	bool selfCollision;
+
+	float damping;
 
 	bool operator==(const SolverParams& other) const {
-		return frameDt == other.frameDt && subSteps == other.subSteps && g == other.g && iterCount == other.iterCount && currMaterial == other.currMaterial && k == other.k && restLen == other.restLen && u == other.u && lambda == other.lambda && other.m == m && kc == other.kc && collisionThreshold == other.collisionThreshold;
+		return frameDt == other.frameDt && subSteps == other.subSteps && g == other.g && iterCount == other.iterCount && currMaterial == other.currMaterial && k == other.k && restLen == other.restLen && u == other.u && lambda == other.lambda && other.m == m && kc == other.kc && collisionThreshold == other.collisionThreshold && selfCollision == other.selfCollision && damping == other.damping;
 			//&& (other.constraintGroupName == constraintGroupName || (other.constraintGroupName != nullptr && constraintGroupName != nullptr && strcmp(constraintGroupName, other.constraintGroupName) == 0));
 	}
 };
@@ -51,14 +54,16 @@ public:
 
 	void ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh = nullptr, uPtr<HalfEdgeMesh> collisionMeshSource = nullptr);
 	void SimulateUpToFrame(uint frameIndex);
+	void KillCollision();
+
+	void VBDSolver::TruncateSimulation(int lastValidFrame);
+	void VBDSolver::SetDirty();
+
 	inline HalfEdgeMesh* GetMesh(uint frameIndex) {
 		if (frameIndex >= cachedPoses.size())
 			std::cerr << "Getting Mesh From Solver doesn't have Frame!" << std::endl;
 		return cachedPoses[frameIndex].get();
 	}
-
-	void VBDSolver::TruncateSimulation(int lastValidFrame);
-	void VBDSolver::SetDirty();
 
 	//
 	/*int iterCount = 5;
@@ -72,7 +77,7 @@ private:
 
 	int simulatingFrame;
 	const vector<SolverParams>* cachedParams;
-	inline const SolverParams& P() { return (*cachedParams)[simulatingFrame]; }
+	inline const SolverParams& P() { return (*cachedParams)[std::max(0, simulatingFrame-1)]; }
 
 	bool dirty = false;
 	vector<uPtr<HalfEdgeMesh>> cachedPoses;

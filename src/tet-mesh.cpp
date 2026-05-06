@@ -25,6 +25,8 @@ TetMesh::TetMesh(const TetMesh& other) {
     restLengths = other.restLengths;
 }
 
+#include <deque>
+
 void TetMesh::FromTetgenOutput(const tetgenio& out, const HalfEdgeMesh& heMesh) {
 
     std::cout << "FromTetgenOutput: " << out.numberofpoints << " points, "
@@ -65,18 +67,44 @@ void TetMesh::FromTetgenOutput(const tetgenio& out, const HalfEdgeMesh& heMesh) 
             });
     }
 
+    // Setup BFS to propogate vel
+    deque<int> visitQueue;
+    vector<bool> accountedFor(vertices.size(), false);
+
     // set is surface flag
     for (auto& v : vertices) {
         v->isSurface = false;
     }
     for (int i = 0; i < out.numberoftrifaces; i++) {
         for (int j = 0; j < 3; j++) {
-            vertices[out.trifacelist[i * 3 + j]]->isSurface = true;
-            vertices[out.trifacelist[i * 3 + j]]->pointOffset = heMesh.vertices[out.trifacelist[i*3+j]]->pointOffset;
+            int id = out.trifacelist[i * 3 + j];
+
+            vertices[id]->isSurface = true;
+            vertices[id]->pointOffset = heMesh.vertices[id]->pointOffset;
+            vertices[id]->vel = heMesh.vertices[id]->vel;
+
+            accountedFor[id] = true;
+            visitQueue.push_back(id);
         }
     }
 
     PreCompute();
+
+    // Run BFS to propogate vel
+    while (visitQueue.size() > 0) {
+        int vert = visitQueue[0];
+        visitQueue.pop_front();
+
+        vector<Vertex*>& neighbors = vertexNeighbors[vert];
+        for (Vertex* neighbor : neighbors) {
+            if (!accountedFor[neighbor->id]) {
+                neighbor->vel = vertices[vert]->vel;
+
+                accountedFor[neighbor->id] = true;
+                visitQueue.push_back(neighbor->id);
+            }
+        }
+    }
 }
 
 void TetMesh::PreCompute() {
@@ -196,6 +224,7 @@ uPtr<HalfEdgeMesh> TetMesh::ToHalfEdge() const {
         auto newVert = heMesh->addVertex(v->pointOffset, v->pos);
         newVert->id = v->id;
         newVert->pointOffset = v->pointOffset;
+        newVert->vel = v->vel;
         //heMesh->vertices.push_back(std::move(newVert));
     }
 

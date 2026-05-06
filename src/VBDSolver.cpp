@@ -64,10 +64,10 @@ void VBDSolver::ResetSimulation(uPtr<HalfEdgeMesh> newStartPoseMesh, uPtr<HalfEd
 		}
 	}
 
-	enableCollisionMesh = collisionMeshSource != nullptr;
 	if (collisionMeshSource != nullptr) {
 		collisionMesh = mkU<HalfEdgeMesh>(*collisionMeshSource);
 		collisionMesh->TriangulateAllFaces();
+		enableCollisionMesh = true;
 	}
 
 	lastSimulatedFrame = 0;
@@ -98,6 +98,11 @@ void VBDSolver::SimulateUpToFrame(uint frameIndex) {
 			SimulateOneFrame();
 		}
 	}
+}
+
+void VBDSolver::KillCollision() {
+	enableCollisionMesh = false;
+	collisionMesh = nullptr;
 }
 
 void VBDSolver::SetDirty() {
@@ -175,15 +180,16 @@ void VBDSolver::ComputeCollisionForceAndHessian(Vertex* vert, vec3& collisionFor
 			Vertex* c = f->edge->next->next->nextVertex;
 			ComputeTriangleCollision(vert, a, b, c, collisionForce, collisionHessian);
 		}
+	}
 
-		// self intersection (DISABLED ATM)
+	// Self collision (broken for internal collision atm)
+	if (P().selfCollision) {
 		for (const uPtr<Face>& f : cachedPoses[lastSimulatedFrame]->faces) {
 			Vertex* a = f->edge->nextVertex;
 			Vertex* b = f->edge->next->nextVertex;
 			Vertex* c = f->edge->next->next->nextVertex;
-			if(vert->id != a->id && vert->id != b->id && vert->id != c->id) ComputeTriangleCollision(vert, a, b, c, collisionForce, collisionHessian);
+			if (vert->id != a->id && vert->id != b->id && vert->id != c->id) ComputeTriangleCollision(vert, a, b, c, collisionForce, collisionHessian);
 		}
-
 	}
 
 }
@@ -520,7 +526,7 @@ void VBDSolver::SimulateOneFrameTet() {
 		for (int i = 0; i < simulatingMesh->vertices.size(); i++) {
 			Vertex* v = simulatingMesh->vertices[i].get();
 			v->vel = (1.0f / stepDt()) * (v->pos - oldPositions[i]);
-			v->vel *= 0.98f; // DAMPING
+			v->vel *= P().damping; // DAMPING
 		}
 	}
 
@@ -573,7 +579,7 @@ void VBDSolver::SimulateOneFrameTri() {
 			Vertex* v = simulatingMesh->vertices[i].get();
 			v->vel = (1.0f / stepDt()) * (v->pos - oldPositions[i]);
 			// v->pos = oldPositions[i] + 0.98f * v->vel * stepDt(); // I dont think this is the right way to do DAMPING
-			v->vel *= 0.98f; // DAMPING
+			v->vel *= P().damping; // DAMPING
 		}
 	}
 

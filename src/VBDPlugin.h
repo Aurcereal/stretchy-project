@@ -62,6 +62,7 @@ private:
     GA_DataId inputGeoDataID = -1;
     GA_DataId constraintGroupID = -1;
     GA_DataId collisionGeoDataID = -1;
+    GA_DataId initialVelDataID = -1;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 

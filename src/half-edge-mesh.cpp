@@ -6,7 +6,7 @@
 #include <GU/GU_Detail.h>
 #include <GU/GU_PrimPoly.h>
 
-void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo, const GA_PointGroup* constraintGroup) {
+void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo, const GA_PointGroup* constraintGroup, const GA_ROHandleV3* velAttrib) {
     pointCountBound = geo->getNumPointOffsets();
     std::vector<std::unordered_set<GA_Offset>> adjList(pointCountBound);
     std::unordered_map<uint, HalfEdge*> symMap;
@@ -18,6 +18,10 @@ void HalfEdgeMesh::CreateFromGUDetail(const GU_Detail* geo, const GA_PointGroup*
         vec3 pos = vec3(hpos.x(), hpos.y(), hpos.z());
 
         auto v = addVertex(pointOffset, pos);
+        if (velAttrib) {
+            UT_Vector3 hVel = velAttrib->get(pointOffset);
+            v->vel = vec3(hVel.x(), hVel.y(), hVel.z());
+        }
         if (constraintGroup != nullptr && constraintGroup->containsOffset(pointOffset))
             v->constrained = true;
     }

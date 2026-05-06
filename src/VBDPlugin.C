@@ -71,8 +71,12 @@ static PRM_Name collisionThresholdName("collisionThreshold", "CollisionThreshold
 static PRM_Name collisionCoefficientName("collisionCoefficient", "CollisionCoefficient");
 
 static PRM_Name constraintGroupNameName("constraintGroupName", "ConstraintGroupName");
+static PRM_Name velAttribNameName("velAttribName", "VelocityAttribName");
 
 static PRM_Name gravityName("gravity", "Gravity");
+
+static PRM_Name selfCollisionName("selfCollision", "SelfCollision");
+static PRM_Name dampingName("damping", "Damping");
 
 //
 static PRM_Default timeScaleDefault(1.0);
@@ -91,6 +95,11 @@ static PRM_Default collisionThresholdDefault(0.1f);
 static PRM_Default collisionCoefficientDefault(1e6);
 
 static PRM_Default constraintGroupNameDefault(0, "ConstraintGroup");
+static PRM_Default velAttribNameDefault(0, "vel");
+
+static PRM_Default selfCollisionDefault(0);
+
+static PRM_Default dampingDefault(0.98f);
 
 static PRM_Default gravityDefault[] = {
     PRM_Default(0.0f),
@@ -103,6 +112,7 @@ SOP_VBD::myTemplateList[] = {
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &timeScaleName, &timeScaleDefault, 0),
    PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &subStepsName, &subStepsDefault, 0),
    PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &iterationCountName, &iterationCountDefault, 0),
+   PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &dampingName, &dampingDefault, 0),
    PRM_Template(PRM_INT, PRM_Template::PRM_EXPORT_MIN, 1, &springConstantName, &springConstantDefault, 0),
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &physicsMaterialName, &physicsMaterialDefault, 0),
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &restLengthName, &restLengthDefault, 0),
@@ -111,6 +121,8 @@ SOP_VBD::myTemplateList[] = {
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &collisionThresholdName, &collisionThresholdDefault, 0),
    PRM_Template(PRM_FLT, PRM_Template::PRM_EXPORT_MIN, 1, &collisionCoefficientName, &collisionCoefficientDefault, 0),
    PRM_Template(PRM_STRING, PRM_Template::PRM_EXPORT_MIN, 1, &constraintGroupNameName, &constraintGroupNameDefault, 0),
+   PRM_Template(PRM_STRING, PRM_Template::PRM_EXPORT_MIN, 1, &velAttribNameName, &velAttribNameDefault, 0),
+   PRM_Template(PRM_TOGGLE, PRM_Template::PRM_EXPORT_MIN, 1, &selfCollisionName, &selfCollisionDefault, 0),
    PRM_Template(PRM_XYZ, PRM_Template::PRM_EXPORT_MIN, 3, &gravityName, gravityDefault, 0),
    PRM_Template()
 };
@@ -235,6 +247,9 @@ SolverParams SOP_VBD::GetParams(fpreal time) {
 
     params.collisionThreshold = evalFloat(collisionThresholdName.getToken(), 0, time);
     params.kc = evalFloat(collisionCoefficientName.getToken(), 0, time);
+    params.selfCollision = (bool) evalInt(selfCollisionName.getToken(), 0, time);
+
+    params.damping = evalFloat(dampingName.getToken(), 0, time);
 
     return params;
 }
@@ -266,6 +281,17 @@ SOP_VBD::cookMySop(OP_Context &context)
     int prevCollisionGeoDataID = collisionGeoDataID;
     collisionGeoDataID = collisionMesh ? collisionMesh->getP()->getDataId() : -1;
     // std::cerr << "Collision data: " << collisionGeoDataID << std::endl;
+
+    // Initial velocity
+    UT_String velAttribName; evalString(velAttribName, velAttribNameName.getToken(), 0, currTime);
+    GA_ROHandleV3 velAttrib = GA_ROHandleV3(gdp, GA_ATTRIB_POINT, velAttribName);
+    int prevInitialVelDataID = initialVelDataID;
+    if (velAttrib.isValid()) {
+        initialVelDataID = velAttrib.getDataId();
+    }
+    else {
+        initialVelDataID = -1;
+    }
 
     // Constraint Group
     int prevConstraintGroupID = constraintGroupID;
@@ -316,21 +342,21 @@ SOP_VBD::cookMySop(OP_Context &context)
     if (
         prevConstraintGroupID != constraintGroupID || // group changed
         gdp->getP()->getDataId() != inputGeoDataID || // input geo changed
-        collisionGeoDataID != prevCollisionGeoDataID // input collision changed
+        collisionGeoDataID != prevCollisionGeoDataID || // input collision changed
+        initialVelDataID != prevInitialVelDataID // initial velocity changed
         ) {
         inputGeoDataID = gdp->getP()->getDataId();
 
-        std::cerr << "Convert input mesh" << std::endl;
         uPtr<HalfEdgeMesh> inputMesh = mkU<HalfEdgeMesh>();        
-        inputMesh->CreateFromGUDetail(gdp, group);
+        inputMesh->CreateFromGUDetail(gdp, group, initialVelDataID != -1 ? &velAttrib : nullptr);
 
         uPtr<HalfEdgeMesh> collisionGeo = nullptr;
         if (collisionGeoDataID != -1) {
             collisionGeo = mkU<HalfEdgeMesh>();
-            collisionGeo->CreateFromGUDetail(collisionMesh, nullptr);
+            collisionGeo->CreateFromGUDetail(collisionMesh, nullptr, nullptr);
         }
 
-        std::cerr << "Time to reset sim" << std::endl;
+        if (!collisionGeo) vbdSolver.KillCollision();
         vbdSolver.ResetSimulation(std::move(inputMesh), collisionGeo ? std::move(collisionGeo) : nullptr);
     }
 
